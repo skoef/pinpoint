@@ -4,7 +4,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: speurtocht\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-09-03 12:13+0000\n"
+"POT-Creation-Date: 2026-09-03 12:18+0000\n"
 "PO-Revision-Date: 2026-09-03 12:13+0000\n"
 "Language-Team: English\n"
 "Language: en\n"
@@ -95,7 +95,7 @@ msgid "You finished!"
 msgstr "You finished!"
 
 #: game/templates/game/play_intro.html:19
-#: game/templates/game/route_list.html:17
+#: game/templates/game/route_list.html:24
 #, python-format
 msgid "%(count)s waypoint"
 msgid_plural "%(count)s waypoints"
@@ -129,7 +129,11 @@ msgstr[1] "Find all %(count)s waypoints to complete the route!"
 msgid "Start"
 msgstr "Start"
 
-#: game/templates/game/route_edit.html:3 game/templates/game/route_list.html:23
+#: game/templates/game/play_unavailable.html:15
+msgid "This route is currently unavailable."
+msgstr "This route is currently unavailable."
+
+#: game/templates/game/route_edit.html:3 game/templates/game/route_list.html:30
 msgid "Edit"
 msgstr "Edit"
 
@@ -219,7 +223,8 @@ msgstr "shown above the button, optional"
 
 #: game/templates/game/route_edit.html:113
 msgid "e.g. You found the hidden chest! Open it and note down the code inside."
-msgstr "e.g. You found the hidden chest! Open it and note down the code inside."
+msgstr ""
+"e.g. You found the hidden chest! Open it and note down the code inside."
 
 #: game/templates/game/route_edit.html:116
 msgid "Button caption"
@@ -251,6 +256,7 @@ msgstr "Auto-advance radius (meters)"
 
 #: game/templates/game/route_edit.html:140
 #: game/templates/game/route_form.html:19
+#: game/templates/game/route_list.html:64
 msgid "Cancel"
 msgstr "Cancel"
 
@@ -287,19 +293,50 @@ msgstr "Routes"
 msgid "New route"
 msgstr "New route"
 
-#: game/templates/game/route_list.html:24
+#: game/templates/game/route_list.html:19
+msgid "active"
+msgstr "active"
+
+#: game/templates/game/route_list.html:21
+msgid "inactive"
+msgstr "inactive"
+
+#: game/templates/game/route_list.html:31
 msgid "QR"
 msgstr "QR"
 
-#: game/templates/game/route_list.html:25
+#: game/templates/game/route_list.html:32
 msgid "Play"
 msgstr "Play"
 
-#: game/templates/game/route_list.html:31
+#: game/templates/game/route_list.html:37
+msgid "Deactivate"
+msgstr "Deactivate"
+
+#: game/templates/game/route_list.html:39
+msgid "Activate"
+msgstr "Activate"
+
+#: game/templates/game/route_list.html:48
+msgid "Deactivate the route before deleting it."
+msgstr "Deactivate the route before deleting it."
+
+#: game/templates/game/route_list.html:48
+#: game/templates/game/route_list.html:51
+#: game/templates/game/route_list.html:67
+msgid "Delete"
+msgstr "Delete"
+
+#: game/templates/game/route_list.html:62
+#, python-format
+msgid "Delete <strong>%(name)s</strong>? This cannot be undone."
+msgstr "Delete <strong>%(name)s</strong>? This cannot be undone."
+
+#: game/templates/game/route_list.html:79
 msgid "No routes yet."
 msgstr "No routes yet."
 
-#: game/templates/game/route_list.html:31
+#: game/templates/game/route_list.html:79
 msgid "Create one."
 msgstr "Create one."
 

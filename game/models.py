@@ -6,6 +6,7 @@ class Route(models.Model):
     name = models.CharField(max_length=200)
     description = models.TextField(blank=True)
     token = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):

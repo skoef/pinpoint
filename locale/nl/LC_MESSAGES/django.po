@@ -4,7 +4,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: speurtocht\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-09-03 12:13+0000\n"
+"POT-Creation-Date: 2026-09-03 12:18+0000\n"
 "PO-Revision-Date: 2026-09-03 12:13+0000\n"
 "Language-Team: Dutch\n"
 "Language: nl\n"
@@ -62,7 +62,9 @@ msgstr ""
 
 #: game/templates/game/play.html:87
 msgid "Location access denied. Enable it in your browser settings and reload."
-msgstr "Locatietoegang geweigerd. Schakel dit in via je browserinstellingen en herlaad de pagina."
+msgstr ""
+"Locatietoegang geweigerd. Schakel dit in via je browserinstellingen en "
+"herlaad de pagina."
 
 #: game/templates/game/play.html:88
 msgid "Geolocation is not supported by this browser."
@@ -95,7 +97,7 @@ msgid "You finished!"
 msgstr "Je hebt het gehaald!"
 
 #: game/templates/game/play_intro.html:19
-#: game/templates/game/route_list.html:17
+#: game/templates/game/route_list.html:24
 #, python-format
 msgid "%(count)s waypoint"
 msgid_plural "%(count)s waypoints"
@@ -116,7 +118,9 @@ msgstr ""
 
 #: game/templates/game/play_intro.html:36
 msgid "Once you arrive, follow the instructions to unlock the next waypoint."
-msgstr "Zodra je aankomt, volg de instructies om het volgende waypoint te ontgrendelen."
+msgstr ""
+"Zodra je aankomt, volg de instructies om het volgende waypoint te "
+"ontgrendelen."
 
 #: game/templates/game/play_intro.html:40
 #, python-format
@@ -129,7 +133,11 @@ msgstr[1] "Vind alle %(count)s waypoints om de route te voltooien!"
 msgid "Start"
 msgstr "Starten"
 
-#: game/templates/game/route_edit.html:3 game/templates/game/route_list.html:23
+#: game/templates/game/play_unavailable.html:15
+msgid "This route is currently unavailable."
+msgstr "Deze route is momenteel niet beschikbaar."
+
+#: game/templates/game/route_edit.html:3 game/templates/game/route_list.html:30
 msgid "Edit"
 msgstr "Bewerken"
 
@@ -219,7 +227,9 @@ msgstr "weergegeven boven de knop, optioneel"
 
 #: game/templates/game/route_edit.html:113
 msgid "e.g. You found the hidden chest! Open it and note down the code inside."
-msgstr "bijv. Je hebt de verborgen kist gevonden! Open hem en noteer de code die erin zit."
+msgstr ""
+"bijv. Je hebt de verborgen kist gevonden! Open hem en noteer de code die "
+"erin zit."
 
 #: game/templates/game/route_edit.html:116
 msgid "Button caption"
@@ -251,6 +261,7 @@ msgstr "Automatisch-voortgang straal (meter)"
 
 #: game/templates/game/route_edit.html:140
 #: game/templates/game/route_form.html:19
+#: game/templates/game/route_list.html:64
 msgid "Cancel"
 msgstr "Annuleren"
 
@@ -287,19 +298,50 @@ msgstr "Routes"
 msgid "New route"
 msgstr "Nieuwe route"
 
-#: game/templates/game/route_list.html:24
+#: game/templates/game/route_list.html:19
+msgid "active"
+msgstr "actief"
+
+#: game/templates/game/route_list.html:21
+msgid "inactive"
+msgstr "inactief"
+
+#: game/templates/game/route_list.html:31
 msgid "QR"
 msgstr "QR"
 
-#: game/templates/game/route_list.html:25
+#: game/templates/game/route_list.html:32
 msgid "Play"
 msgstr "Spelen"
 
-#: game/templates/game/route_list.html:31
+#: game/templates/game/route_list.html:37
+msgid "Deactivate"
+msgstr "Deactiveren"
+
+#: game/templates/game/route_list.html:39
+msgid "Activate"
+msgstr "Activeren"
+
+#: game/templates/game/route_list.html:48
+msgid "Deactivate the route before deleting it."
+msgstr "Deactiveer de route voordat je hem verwijdert."
+
+#: game/templates/game/route_list.html:48
+#: game/templates/game/route_list.html:51
+#: game/templates/game/route_list.html:67
+msgid "Delete"
+msgstr "Verwijderen"
+
+#: game/templates/game/route_list.html:62
+#, python-format
+msgid "Delete <strong>%(name)s</strong>? This cannot be undone."
+msgstr "Verwijder <strong>%(name)s</strong>? Dit kan niet ongedaan worden gemaakt."
+
+#: game/templates/game/route_list.html:79
 msgid "No routes yet."
 msgstr "Nog geen routes."
 
-#: game/templates/game/route_list.html:31
+#: game/templates/game/route_list.html:79
 msgid "Create one."
 msgstr "Maak er een aan."
 

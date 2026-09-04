@@ -5,6 +5,8 @@ urlpatterns = [
     # Game master
     path("", views.route_list, name="route_list"),
     path("routes/new/", views.route_create, name="route_create"),
+    path("routes/<int:pk>/toggle/", views.route_toggle_active, name="route_toggle_active"),
+    path("routes/<int:pk>/delete/", views.route_delete, name="route_delete"),
     path("routes/<int:pk>/", views.route_edit, name="route_edit"),
     path("routes/<int:pk>/waypoints/add/", views.waypoint_add, name="waypoint_add"),
     path("routes/<int:pk>/waypoints/reorder/", views.waypoint_reorder, name="waypoint_reorder"),

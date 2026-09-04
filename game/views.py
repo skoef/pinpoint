@@ -18,6 +18,22 @@ def route_list(request):
     return render(request, "game/route_list.html", {"routes": routes})
 
 
+@require_POST
+def route_toggle_active(request, pk):
+    route = get_object_or_404(Route, pk=pk)
+    route.is_active = not route.is_active
+    route.save(update_fields=["is_active"])
+    return redirect("route_list")
+
+
+@require_POST
+def route_delete(request, pk):
+    route = get_object_or_404(Route, pk=pk)
+    if not route.is_active:
+        route.delete()
+    return redirect("route_list")
+
+
 def route_create(request):
     if request.method == "POST":
         name = request.POST.get("name", "").strip()
@@ -129,6 +145,8 @@ def _wp_json(wp):
 
 def play_intro(request, token):
     route = get_object_or_404(Route, token=token)
+    if not route.is_active:
+        return render(request, "game/play_unavailable.html", {"route": route})
     waypoints = route.get_ordered_waypoints()
     return render(request, "game/play_intro.html", {
         "route": route,
