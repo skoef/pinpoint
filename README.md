@@ -16,18 +16,20 @@ The button or question is only revealed once the player physically arrives at th
 
 ## Tech stack
 
-- Python / Django 4.2, SQLite
+- Python 3.12+ / Django 4.2, SQLite (production container runs Python 3.13)
 - Bootstrap 5, Leaflet.js (map), SortableJS (drag-to-reorder waypoints)
 - Vanilla JS, no build step — all dependencies loaded from CDN
 - i18n: English and Dutch
 
 ## Running locally
 
+Requires **Python 3.12 or newer**. On macOS, avoid the system Python (`/usr/bin/python3`) — it is linked against LibreSSL, which makes `urllib3` emit `NotOpenSSLWarning` on every command. Use a Homebrew build instead: `brew install python@3.12`.
+
 ```bash
 git clone <repo>
 cd pinpoint
 
-python -m venv .venv
+python3.12 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 

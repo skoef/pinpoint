@@ -218,7 +218,7 @@ function numberIcon(n) {
 {% trans "Waypoint" as str_wp_default %}
 {% for wp in waypoints %}
 markers[{{ wp.pk }}] = L.marker([{{ wp.lat }}, {{ wp.lng }}], {icon: numberIcon({{ forloop.counter }})})
-  .addTo(map).bindPopup("{% if wp.label %}{{ wp.label|escapejs }}{% else %}{{ str_wp_default|escapejs }} #{{ forloop.counter }}{% endif %}");
+  .addTo(map).bindTooltip("{% if wp.label %}{{ wp.label|escapejs }}{% else %}{{ str_wp_default|escapejs }} #{{ forloop.counter }}{% endif %}", {direction: "top"});
 {% endfor %}
 
 {% if waypoints %}
@@ -294,7 +294,7 @@ document.getElementById("modal-save").addEventListener("click", async () => {
     addWaypointToList(wp);
     const order = document.querySelectorAll("#waypoint-list .waypoint-item").length;
     markers[wp.id] = L.marker([wp.lat, wp.lng], {icon: numberIcon(order)}).addTo(map)
-      .bindPopup(wp.label || `${STR_WAYPOINT} ${order}`);
+      .bindTooltip(wp.label || `${STR_WAYPOINT} #${order}`, {direction: "top"});
   }
   wpModal.hide();
 });
@@ -349,6 +349,7 @@ function updateWaypointInList(wp) {
   const order = badge ? badge.textContent : "?";
   const newLi = makeLi(wp, order);
   existing.replaceWith(newLi);
+  refreshMarkers();
 }
 
 document.getElementById("waypoint-list").addEventListener("click", async (e) => {
@@ -384,6 +385,18 @@ document.getElementById("waypoint-list").addEventListener("click", async (e) => 
 function renumberList() {
   document.querySelectorAll("#waypoint-list .waypoint-item").forEach((li, i) => {
     li.querySelector(".badge.bg-secondary").textContent = i + 1;
+  });
+  refreshMarkers();
+}
+
+// Re-sync each marker's number icon and hover tooltip with the current list order.
+function refreshMarkers() {
+  document.querySelectorAll("#waypoint-list .waypoint-item").forEach((li, i) => {
+    const marker = markers[li.dataset.id];
+    if (!marker) return;
+    marker.setIcon(numberIcon(i + 1));
+    marker.unbindTooltip();
+    marker.bindTooltip(li.dataset.label || `${STR_WAYPOINT} #${i + 1}`, {direction: "top"});
   });
 }
 

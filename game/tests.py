@@ -604,6 +604,36 @@ class RouteCompletionFieldsTest(GMTestCase):
         self.assertEqual(self.route.completion_emoji, "")
 
 
+class MarkerTooltipTest(GMTestCase):
+    """Hovering a map marker must show the waypoint's label (Leaflet tooltip, not popup)."""
+
+    def setUp(self):
+        super().setUp()
+        self.route = make_route(owner=self.user)
+
+    def _html(self):
+        return self.client.get(reverse("route_edit", args=[self.route.pk])).content.decode()
+
+    def test_labelled_waypoint_shows_label(self):
+        make_waypoint(self.route, order=0, label="The old oak tree")
+        self.assertIn('.bindTooltip("The old oak tree"', self._html())
+
+    def test_unlabelled_waypoint_falls_back_to_number(self):
+        make_waypoint(self.route, order=0, label="")
+        self.assertIn('.bindTooltip("Waypoint #1"', self._html())
+
+    def test_uses_tooltip_not_popup(self):
+        make_waypoint(self.route, order=0, label="Somewhere")
+        html = self._html()
+        self.assertNotIn("bindPopup", html)
+        self.assertIn("bindTooltip", html)
+
+    def test_label_is_escaped(self):
+        make_waypoint(self.route, order=0, label='Quote " and \\ backslash')
+        html = self._html()
+        self.assertNotIn('.bindTooltip("Quote " and', html)
+
+
 class EmojiPickerTest(GMTestCase):
     def setUp(self):
         super().setUp()
