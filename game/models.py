@@ -1,8 +1,10 @@
 import uuid
+from django.conf import settings
 from django.db import models
 
 
 class Route(models.Model):
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="routes", null=True)
     name = models.CharField(max_length=200)
     description = models.TextField(blank=True)
     token = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)

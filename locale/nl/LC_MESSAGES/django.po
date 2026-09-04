@@ -4,7 +4,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: speurtocht\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-09-03 12:18+0000\n"
+"POT-Creation-Date: 2026-09-03 14:28+0000\n"
 "PO-Revision-Date: 2026-09-03 12:13+0000\n"
 "Language-Team: Dutch\n"
 "Language: nl\n"
@@ -12,6 +12,26 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+#: game/templates/game/base.html:19
+msgid "Log out"
+msgstr "Uitloggen"
+
+#: game/templates/game/login.html:22
+msgid "Invalid username or password."
+msgstr "Ongeldige gebruikersnaam of wachtwoord."
+
+#: game/templates/game/login.html:25
+msgid "Username"
+msgstr "Gebruikersnaam"
+
+#: game/templates/game/login.html:29
+msgid "Password"
+msgstr "Wachtwoord"
+
+#: game/templates/game/login.html:32
+msgid "Log in"
+msgstr "Inloggen"
 
 #: game/templates/game/play.html:20
 #, python-format
@@ -335,7 +355,8 @@ msgstr "Verwijderen"
 #: game/templates/game/route_list.html:62
 #, python-format
 msgid "Delete <strong>%(name)s</strong>? This cannot be undone."
-msgstr "Verwijder <strong>%(name)s</strong>? Dit kan niet ongedaan worden gemaakt."
+msgstr ""
+"Verwijder <strong>%(name)s</strong>? Dit kan niet ongedaan worden gemaakt."
 
 #: game/templates/game/route_list.html:79
 msgid "No routes yet."
@@ -345,10 +366,10 @@ msgstr "Nog geen routes."
 msgid "Create one."
 msgstr "Maak er een aan."
 
-#: speurtocht/settings.py:112
+#: speurtocht/settings.py:109
 msgid "English"
 msgstr "Engels"
 
-#: speurtocht/settings.py:113
+#: speurtocht/settings.py:110
 msgid "Dutch"
 msgstr "Nederlands"

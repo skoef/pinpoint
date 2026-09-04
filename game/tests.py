@@ -1,5 +1,6 @@
 import json
 
+from django.contrib.auth.models import User
 from django.test import TestCase
 from django.urls import reverse
 
@@ -10,8 +11,15 @@ from .models import Route, Waypoint
 # Helpers
 # ---------------------------------------------------------------------------
 
-def make_route(name="Test Route", active=True, **kwargs):
-    return Route.objects.create(name=name, is_active=active, **kwargs)
+def make_user(username="testuser", **kwargs):
+    return User.objects.create_user(username=username, password="testpass", **kwargs)
+
+
+def make_route(name="Test Route", active=True, owner=None, **kwargs):
+    if owner is None:
+        owner, _ = User.objects.get_or_create(username="default_owner",
+                                               defaults={"password": "x"})
+    return Route.objects.create(name=name, is_active=active, owner=owner, **kwargs)
 
 
 def make_waypoint(route, order=0, advance_type=Waypoint.BUTTON, **kwargs):
@@ -36,7 +44,8 @@ class RouteModelTest(TestCase):
         self.assertEqual(str(route), "My Route")
 
     def test_default_active(self):
-        route = Route.objects.create(name="R")
+        user = make_user()
+        route = Route.objects.create(name="R", owner=user)
         self.assertTrue(route.is_active)
 
     def test_get_ordered_waypoints(self):
@@ -60,32 +69,88 @@ class WaypointModelTest(TestCase):
 
 
 # ---------------------------------------------------------------------------
-# GM: route CRUD
+# GM: auth
 # ---------------------------------------------------------------------------
 
-class RouteListViewTest(TestCase):
+class AuthRedirectTest(TestCase):
+    def test_route_list_requires_login(self):
+        response = self.client.get(reverse("route_list"))
+        self.assertRedirects(response, "/login/?next=/")
+
+    def test_route_create_requires_login(self):
+        response = self.client.get(reverse("route_create"))
+        self.assertRedirects(response, "/login/?next=/routes/new/")
+
+
+class OwnershipTest(TestCase):
+    def setUp(self):
+        self.user = make_user("alice")
+        self.other = make_user("bob")
+        self.client.login(username="alice", password="testpass")
+
+    def test_cannot_edit_other_users_route(self):
+        route = make_route(owner=self.other)
+        response = self.client.get(reverse("route_edit", args=[route.pk]))
+        self.assertEqual(response.status_code, 404)
+
+    def test_cannot_delete_other_users_route(self):
+        route = make_route(active=False, owner=self.other)
+        self.client.post(reverse("route_delete", args=[route.pk]))
+        self.assertTrue(Route.objects.filter(pk=route.pk).exists())
+
+    def test_cannot_toggle_other_users_route(self):
+        route = make_route(owner=self.other)
+        self.client.post(reverse("route_toggle_active", args=[route.pk]))
+        route.refresh_from_db()
+        self.assertTrue(route.is_active)
+
+    def test_cannot_add_waypoint_to_other_users_route(self):
+        route = make_route(owner=self.other)
+        response = post_json(self.client, reverse("waypoint_add", args=[route.pk]),
+                             {"lat": 52.0, "lng": 4.0})
+        self.assertEqual(response.status_code, 404)
+
+    def test_route_list_only_shows_own_routes(self):
+        make_route(name="Mine", owner=self.user)
+        make_route(name="Theirs", owner=self.other)
+        response = self.client.get(reverse("route_list"))
+        self.assertContains(response, "Mine")
+        self.assertNotContains(response, "Theirs")
+
+
+# ---------------------------------------------------------------------------
+# GM: route CRUD  (all tests log in as a user)
+# ---------------------------------------------------------------------------
+
+class GMTestCase(TestCase):
+    def setUp(self):
+        self.user = make_user()
+        self.client.login(username="testuser", password="testpass")
+
+
+class RouteListViewTest(GMTestCase):
     def test_empty(self):
         response = self.client.get(reverse("route_list"))
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "No routes yet")
 
     def test_shows_routes(self):
-        make_route(name="Forest Walk")
+        make_route(name="Forest Walk", owner=self.user)
         response = self.client.get(reverse("route_list"))
         self.assertContains(response, "Forest Walk")
 
     def test_shows_active_badge(self):
-        make_route(active=True)
+        make_route(active=True, owner=self.user)
         response = self.client.get(reverse("route_list"))
         self.assertContains(response, "active")
 
     def test_shows_inactive_badge(self):
-        make_route(active=False)
+        make_route(active=False, owner=self.user)
         response = self.client.get(reverse("route_list"))
         self.assertContains(response, "inactive")
 
 
-class RouteCreateViewTest(TestCase):
+class RouteCreateViewTest(GMTestCase):
     def test_get(self):
         response = self.client.get(reverse("route_create"))
         self.assertEqual(response.status_code, 200)
@@ -93,6 +158,7 @@ class RouteCreateViewTest(TestCase):
     def test_post_creates_and_redirects(self):
         response = self.client.post(reverse("route_create"), {"name": "New Route", "description": "Desc"})
         route = Route.objects.get(name="New Route")
+        self.assertEqual(route.owner, self.user)
         self.assertRedirects(response, reverse("route_edit", args=[route.pk]))
 
     def test_post_empty_name_does_not_create(self):
@@ -100,9 +166,10 @@ class RouteCreateViewTest(TestCase):
         self.assertEqual(Route.objects.count(), 0)
 
 
-class RouteEditViewTest(TestCase):
+class RouteEditViewTest(GMTestCase):
     def setUp(self):
-        self.route = make_route(name="Old Name", description="Old desc")
+        super().setUp()
+        self.route = make_route(name="Old Name", description="Old desc", owner=self.user)
 
     def test_get(self):
         response = self.client.get(reverse("route_edit", args=[self.route.pk]))
@@ -123,61 +190,61 @@ class RouteEditViewTest(TestCase):
         self.assertEqual(self.route.name, "Old Name")
 
 
-class RouteToggleActiveTest(TestCase):
+class RouteToggleActiveTest(GMTestCase):
     def test_deactivates_active_route(self):
-        route = make_route(active=True)
+        route = make_route(active=True, owner=self.user)
         self.client.post(reverse("route_toggle_active", args=[route.pk]))
         route.refresh_from_db()
         self.assertFalse(route.is_active)
 
     def test_activates_inactive_route(self):
-        route = make_route(active=False)
+        route = make_route(active=False, owner=self.user)
         self.client.post(reverse("route_toggle_active", args=[route.pk]))
         route.refresh_from_db()
         self.assertTrue(route.is_active)
 
     def test_redirects_to_list(self):
-        route = make_route()
+        route = make_route(owner=self.user)
         response = self.client.post(reverse("route_toggle_active", args=[route.pk]))
         self.assertRedirects(response, reverse("route_list"))
 
     def test_get_not_allowed(self):
-        route = make_route()
+        route = make_route(owner=self.user)
         response = self.client.get(reverse("route_toggle_active", args=[route.pk]))
         self.assertEqual(response.status_code, 405)
 
 
-class RouteDeleteViewTest(TestCase):
+class RouteDeleteViewTest(GMTestCase):
     def test_deletes_inactive_route(self):
-        route = make_route(active=False)
+        route = make_route(active=False, owner=self.user)
         self.client.post(reverse("route_delete", args=[route.pk]))
         self.assertFalse(Route.objects.filter(pk=route.pk).exists())
 
     def test_does_not_delete_active_route(self):
-        route = make_route(active=True)
+        route = make_route(active=True, owner=self.user)
         self.client.post(reverse("route_delete", args=[route.pk]))
         self.assertTrue(Route.objects.filter(pk=route.pk).exists())
 
     def test_redirects_to_list(self):
-        route = make_route(active=False)
+        route = make_route(active=False, owner=self.user)
         response = self.client.post(reverse("route_delete", args=[route.pk]))
         self.assertRedirects(response, reverse("route_list"))
 
     def test_deletes_waypoints_too(self):
-        route = make_route(active=False)
+        route = make_route(active=False, owner=self.user)
         make_waypoint(route)
         self.client.post(reverse("route_delete", args=[route.pk]))
         self.assertEqual(Waypoint.objects.count(), 0)
 
     def test_get_not_allowed(self):
-        route = make_route(active=False)
+        route = make_route(active=False, owner=self.user)
         response = self.client.get(reverse("route_delete", args=[route.pk]))
         self.assertEqual(response.status_code, 405)
 
 
-class RouteQRTest(TestCase):
+class RouteQRTest(GMTestCase):
     def test_returns_png(self):
-        route = make_route()
+        route = make_route(owner=self.user)
         response = self.client.get(reverse("route_qr", args=[route.pk]))
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response["Content-Type"], "image/png")
@@ -187,9 +254,10 @@ class RouteQRTest(TestCase):
 # GM: waypoint CRUD
 # ---------------------------------------------------------------------------
 
-class WaypointAddTest(TestCase):
+class WaypointAddTest(GMTestCase):
     def setUp(self):
-        self.route = make_route()
+        super().setUp()
+        self.route = make_route(owner=self.user)
 
     def test_creates_waypoint(self):
         post_json(self.client, reverse("waypoint_add", args=[self.route.pk]),
@@ -221,9 +289,10 @@ class WaypointAddTest(TestCase):
         self.assertEqual(wp.answer, "red")
 
 
-class WaypointUpdateTest(TestCase):
+class WaypointUpdateTest(GMTestCase):
     def setUp(self):
-        self.route = make_route()
+        super().setUp()
+        self.route = make_route(owner=self.user)
         self.wp = make_waypoint(self.route, label="Old", advance_type=Waypoint.BUTTON)
 
     def test_updates_label(self):
@@ -242,9 +311,10 @@ class WaypointUpdateTest(TestCase):
         self.assertEqual(self.wp.proximity_meters, 50)
 
 
-class WaypointDeleteTest(TestCase):
+class WaypointDeleteTest(GMTestCase):
     def setUp(self):
-        self.route = make_route()
+        super().setUp()
+        self.route = make_route(owner=self.user)
 
     def test_deletes_waypoint(self):
         wp = make_waypoint(self.route, order=0)
@@ -265,9 +335,10 @@ class WaypointDeleteTest(TestCase):
         self.assertEqual(response.json(), {"ok": True})
 
 
-class WaypointReorderTest(TestCase):
+class WaypointReorderTest(GMTestCase):
     def setUp(self):
-        self.route = make_route()
+        super().setUp()
+        self.route = make_route(owner=self.user)
         self.wp1 = make_waypoint(self.route, order=0)
         self.wp2 = make_waypoint(self.route, order=1)
         self.wp3 = make_waypoint(self.route, order=2)
@@ -289,7 +360,7 @@ class WaypointReorderTest(TestCase):
 
 
 # ---------------------------------------------------------------------------
-# Player: intro and navigation
+# Player: intro and navigation  (no auth required)
 # ---------------------------------------------------------------------------
 
 class PlayIntroTest(TestCase):
@@ -320,7 +391,6 @@ class PlayStartTest(TestCase):
         session = self.client.session
         session[f"route_{self.route.pk}_waypoint"] = 3
         session.save()
-
         self.client.post(reverse("play_start", args=[self.route.token]))
         session = self.client.session
         self.assertEqual(session.get(f"route_{self.route.pk}_waypoint"), 0)
@@ -431,8 +501,6 @@ class PlayAdvanceProximityTest(TestCase):
 
 
 class PlaySessionIsolationTest(TestCase):
-    """Progress for one route does not affect another."""
-
     def test_separate_sessions_per_route(self):
         route_a = make_route(name="A")
         route_b = make_route(name="B")

@@ -4,7 +4,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: speurtocht\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-09-03 12:18+0000\n"
+"POT-Creation-Date: 2026-09-03 14:28+0000\n"
 "PO-Revision-Date: 2026-09-03 12:13+0000\n"
 "Language-Team: English\n"
 "Language: en\n"
@@ -12,6 +12,26 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+#: game/templates/game/base.html:19
+msgid "Log out"
+msgstr "Log out"
+
+#: game/templates/game/login.html:22
+msgid "Invalid username or password."
+msgstr "Invalid username or password."
+
+#: game/templates/game/login.html:25
+msgid "Username"
+msgstr "Username"
+
+#: game/templates/game/login.html:29
+msgid "Password"
+msgstr "Password"
+
+#: game/templates/game/login.html:32
+msgid "Log in"
+msgstr "Log in"
 
 #: game/templates/game/play.html:20
 #, python-format
@@ -340,10 +360,10 @@ msgstr "No routes yet."
 msgid "Create one."
 msgstr "Create one."
 
-#: speurtocht/settings.py:112
+#: speurtocht/settings.py:109
 msgid "English"
 msgstr "English"
 
-#: speurtocht/settings.py:113
+#: speurtocht/settings.py:110
 msgid "Dutch"
 msgstr "Dutch"

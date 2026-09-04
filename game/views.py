@@ -2,6 +2,7 @@ import io
 import json
 
 import qrcode
+from django.contrib.auth.decorators import login_required
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
@@ -13,39 +14,26 @@ from .models import Route, Waypoint
 # Game master views
 # ---------------------------------------------------------------------------
 
+@login_required
 def route_list(request):
-    routes = Route.objects.order_by("-created_at")
+    routes = Route.objects.filter(owner=request.user).order_by("-created_at")
     return render(request, "game/route_list.html", {"routes": routes})
 
 
-@require_POST
-def route_toggle_active(request, pk):
-    route = get_object_or_404(Route, pk=pk)
-    route.is_active = not route.is_active
-    route.save(update_fields=["is_active"])
-    return redirect("route_list")
-
-
-@require_POST
-def route_delete(request, pk):
-    route = get_object_or_404(Route, pk=pk)
-    if not route.is_active:
-        route.delete()
-    return redirect("route_list")
-
-
+@login_required
 def route_create(request):
     if request.method == "POST":
         name = request.POST.get("name", "").strip()
         description = request.POST.get("description", "").strip()
         if name:
-            route = Route.objects.create(name=name, description=description)
+            route = Route.objects.create(name=name, description=description, owner=request.user)
             return redirect("route_edit", pk=route.pk)
     return render(request, "game/route_form.html", {"route": None})
 
 
+@login_required
 def route_edit(request, pk):
-    route = get_object_or_404(Route, pk=pk)
+    route = get_object_or_404(Route, pk=pk, owner=request.user)
     if request.method == "POST":
         name = request.POST.get("name", "").strip()
         description = request.POST.get("description", "").strip()
@@ -58,9 +46,38 @@ def route_edit(request, pk):
     return render(request, "game/route_edit.html", {"route": route, "waypoints": waypoints})
 
 
+@login_required
+@require_POST
+def route_toggle_active(request, pk):
+    route = get_object_or_404(Route, pk=pk, owner=request.user)
+    route.is_active = not route.is_active
+    route.save(update_fields=["is_active"])
+    return redirect("route_list")
+
+
+@login_required
+@require_POST
+def route_delete(request, pk):
+    route = get_object_or_404(Route, pk=pk, owner=request.user)
+    if not route.is_active:
+        route.delete()
+    return redirect("route_list")
+
+
+@login_required
+def route_qr(request, pk):
+    route = get_object_or_404(Route, pk=pk, owner=request.user)
+    play_url = request.build_absolute_uri(f"/play/{route.token}/")
+    img = qrcode.make(play_url)
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return HttpResponse(buf.getvalue(), content_type="image/png")
+
+
+@login_required
 @require_POST
 def waypoint_add(request, pk):
-    route = get_object_or_404(Route, pk=pk)
+    route = get_object_or_404(Route, pk=pk, owner=request.user)
     data = json.loads(request.body)
     order = route.waypoints.count()
     wp = Waypoint.objects.create(
@@ -79,9 +96,10 @@ def waypoint_add(request, pk):
     return JsonResponse(_wp_json(wp))
 
 
+@login_required
 @require_POST
 def waypoint_update(request, pk):
-    wp = get_object_or_404(Waypoint, pk=pk)
+    wp = get_object_or_404(Waypoint, pk=pk, route__owner=request.user)
     data = json.loads(request.body)
     wp.label = data.get("label", wp.label)
     wp.advance_type = data.get("advance_type", wp.advance_type)
@@ -94,9 +112,10 @@ def waypoint_update(request, pk):
     return JsonResponse(_wp_json(wp))
 
 
+@login_required
 @require_POST
 def waypoint_delete(request, pk):
-    wp = get_object_or_404(Waypoint, pk=pk)
+    wp = get_object_or_404(Waypoint, pk=pk, route__owner=request.user)
     route = wp.route
     wp.delete()
     for i, w in enumerate(route.get_ordered_waypoints()):
@@ -105,22 +124,14 @@ def waypoint_delete(request, pk):
     return JsonResponse({"ok": True})
 
 
+@login_required
 @require_POST
 def waypoint_reorder(request, pk):
-    route = get_object_or_404(Route, pk=pk)
+    route = get_object_or_404(Route, pk=pk, owner=request.user)
     data = json.loads(request.body)
     for i, wp_id in enumerate(data):
         Waypoint.objects.filter(pk=wp_id, route=route).update(order=i)
     return JsonResponse({"ok": True})
-
-
-def route_qr(request, pk):
-    route = get_object_or_404(Route, pk=pk)
-    play_url = request.build_absolute_uri(f"/play/{route.token}/")
-    img = qrcode.make(play_url)
-    buf = io.BytesIO()
-    img.save(buf, format="PNG")
-    return HttpResponse(buf.getvalue(), content_type="image/png")
 
 
 def _wp_json(wp):
@@ -140,7 +151,7 @@ def _wp_json(wp):
 
 
 # ---------------------------------------------------------------------------
-# Player views
+# Player views  (no auth required)
 # ---------------------------------------------------------------------------
 
 def play_intro(request, token):
@@ -158,7 +169,6 @@ def play_intro(request, token):
 @require_POST
 def play_start(request, token):
     route = get_object_or_404(Route, token=token)
-    # Reset progress so starting fresh every time the intro is submitted
     request.session[f"route_{route.pk}_waypoint"] = 0
     return redirect("play_game", token=token)
 

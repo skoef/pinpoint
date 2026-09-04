@@ -4,7 +4,7 @@ A Django web app for running GPS-based scavenger hunts ("speurtocht" is Dutch fo
 
 ## What it does
 
-**Game masters** create routes — ordered sequences of GPS waypoints — via a browser-based interface with an interactive map. Each waypoint can advance the player in one of three ways:
+**Game masters** (GMs) create routes — ordered sequences of GPS waypoints — via a browser-based interface with an interactive map. Each waypoint can advance the player in one of three ways:
 
 - **Button** — player taps a button (optionally with custom text and button label)
 - **Question / Riddle** — player must answer correctly (case-insensitive) to proceed
@@ -37,5 +37,7 @@ python manage.py test game
 
 - **Always write tests when making changes.** New views, model changes, and business logic must be covered. Run the full suite before considering work done.
 - **Always keep translations in sync.** Any user-facing string added or changed in a template must be wrapped with `{% trans %}` or `{% blocktrans %}`. After that, run `python manage.py makemessages -l en -l nl`, fill in the new `msgstr` entries in both `locale/en/LC_MESSAGES/django.po` and `locale/nl/LC_MESSAGES/django.po`, then run `python manage.py compilemessages -l en -l nl`. Never leave a `msgstr ""` blank.
+- **`.mo` files are excluded from git.** Run `compilemessages` locally after editing `.po` files. The Dockerfile also runs it at build time.
+- **GM views require login; player views are public.** All route/waypoint management views use `@login_required` and filter by `owner=request.user`. Play views (`play_intro`, `play_start`, `play`, `play_advance`) have no auth — players access routes via an unguessable UUID token.
 - Routes can only be deleted when inactive (`is_active=False`). The view enforces this server-side.
 - Player progress is stored in the Django session keyed as `route_{pk}_waypoint`. The `play_start` view resets it to 0.
