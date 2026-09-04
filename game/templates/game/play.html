@@ -95,6 +95,7 @@
     {% trans "Close enough — advancing…" as str_close_enough %}
     {% trans "Get within {meters} m to continue ({distance} m away)" as str_get_within_away %}
     {% trans "Get within {meters} m to continue" as str_get_within %}
+    {% trans "Improving accuracy…" as str_improving %}
     const I18N = {
       accuracy:      "{{ str_accuracy|escapejs }}",
       locationFailed:"{{ str_loc_failed|escapejs }}",
@@ -103,6 +104,7 @@
       closeEnough:   "{{ str_close_enough|escapejs }}",
       getWithinAway: "{{ str_get_within_away|escapejs }}",
       getWithin:     "{{ str_get_within|escapejs }}",
+      improving:     "{{ str_improving|escapejs }}",
     };
 
     if (arrived) document.getElementById("advance-ui").style.display = "block";
@@ -125,10 +127,17 @@
       document.getElementById("advance-ui").style.display = "block";
     }
 
+    const ACCURACY_THRESHOLD_M = 50;
+
     function update(pos) {
+      const acc = Math.round(pos.coords.accuracy);
+      if (pos.coords.accuracy > ACCURACY_THRESHOLD_M) {
+        setStatus(I18N.improving + " (±" + acc + " m)", false);
+        return;
+      }
       const d = haversineMeters(pos.coords.latitude, pos.coords.longitude, TARGET_LAT, TARGET_LNG);
       document.getElementById("distance").textContent = Math.round(d);
-      setStatus(I18N.accuracy.replace("{accuracy}", Math.round(pos.coords.accuracy)), false);
+      setStatus(I18N.accuracy.replace("{accuracy}", acc), false);
 
       if (ADVANCE_TYPE === "proximity") {
         revealAdvanceUI();
@@ -166,7 +175,7 @@
           clearTimeout(timeoutId);
           setStatus(err.code === 1 ? I18N.locationDenied : I18N.locationFailed, true);
         },
-        {enableHighAccuracy: true, maximumAge: 5000}
+        {enableHighAccuracy: true, maximumAge: 0}
       );
     } else {
       setStatus(I18N.noGeo, true);

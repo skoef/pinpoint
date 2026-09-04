@@ -1,6 +1,6 @@
-# Speurtocht
+# Pinpoint
 
-A Django web app for running GPS-based scavenger hunts ("speurtocht" is Dutch for scavenger hunt).
+A Django web app for running GPS-based scavenger hunts.
 
 ## What it does
 

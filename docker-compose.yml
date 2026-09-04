@@ -1,6 +1,6 @@
 services:
   app:
-    image: docker.io/rschoof/speurtocht:v0.0.0
+    image: docker.io/rschoof/pinpoint:v0.0.0
     ports:
       - "8000:8000"
     environment:

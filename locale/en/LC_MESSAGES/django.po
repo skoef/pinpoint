@@ -1,8 +1,8 @@
-# English translations for Speurtocht.
+# English translations for Pinpoint.
 #
 msgid ""
 msgstr ""
-"Project-Id-Version: speurtocht\n"
+"Project-Id-Version: pinpoint\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2026-09-03 15:36+0000\n"
 "PO-Revision-Date: 2026-09-03 12:13+0000\n"
@@ -101,6 +101,10 @@ msgstr "Get within {meters} m to continue ({distance} m away)"
 #, python-brace-format
 msgid "Get within {meters} m to continue"
 msgstr "Get within {meters} m to continue"
+
+#: game/templates/game/play.html:98
+msgid "Improving accuracy…"
+msgstr "Improving accuracy…"
 
 #: game/templates/game/play_empty.html:15
 msgid "This route has no waypoints yet."
@@ -369,10 +373,10 @@ msgstr "No routes yet."
 msgid "Create one."
 msgstr "Create one."
 
-#: speurtocht/settings.py:109
+#: pinpoint/settings.py:109
 msgid "English"
 msgstr "English"
 
-#: speurtocht/settings.py:110
+#: pinpoint/settings.py:110
 msgid "Dutch"
 msgstr "Dutch"
