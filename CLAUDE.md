@@ -40,6 +40,7 @@ python manage.py test game
 - **`.mo` files are excluded from git.** Run `compilemessages` locally after editing `.po` files. The Dockerfile also runs it at build time.
 - **Keep `docker-compose.yml` environment list in sync.** Any new environment variable introduced in `settings.py` must be added to the `environment:` section of `docker-compose.yml` so it is forwarded from the Elastic Beanstalk host into the container.
 - **Keep `.dockerignore` in sync.** Any file added to the repo that is not needed at container runtime (dev tooling, docs, config files, CI files) must be added to `.dockerignore` in the same change.
+- **Keep `README.md` up to date.** When adding features, changing how the app is run, or modifying deployment, update `README.md` in the same change if the user-facing description or setup instructions are affected.
 - **GM views require login; player views are public.** All route/waypoint management views use `@login_required` and filter by `owner=request.user`. Play views (`play_intro`, `play_start`, `play`, `play_advance`) have no auth — players access routes via an unguessable UUID token.
 - Routes can only be deleted when inactive (`is_active=False`). The view enforces this server-side.
 - Player progress is stored in the Django session keyed as `route_{pk}_waypoint`. The `play_start` view resets it to 0.
