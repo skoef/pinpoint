@@ -7,4 +7,4 @@ commitizen:
   update_changelog_on_bump: true
   major_version_zero: true
   update_files:
-    - Dockerrun.aws.json:v$current_version:v$new_version
+    - docker-compose.yml:v$current_version:v$new_version

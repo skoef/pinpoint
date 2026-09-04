@@ -11,5 +11,6 @@ staticfiles
 .gitignore
 .pre-commit-config.yaml
 CLAUDE.md
+docker-compose.yml
 Docker*
 media/
