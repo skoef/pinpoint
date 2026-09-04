@@ -575,6 +575,92 @@ class PlayAdvanceProximityTest(TestCase):
         self.assertEqual(session[f"route_{self.route.pk}_waypoint"], 1)
 
 
+class RouteCompletionFieldsTest(GMTestCase):
+    def setUp(self):
+        super().setUp()
+        self.route = make_route(owner=self.user)
+
+    def test_save_completion_message_and_emoji(self):
+        self.client.post(reverse("route_edit", args=[self.route.pk]), {
+            "name": self.route.name,
+            "completion_message": "Well done!",
+            "completion_emoji": "🏆",
+        })
+        self.route.refresh_from_db()
+        self.assertEqual(self.route.completion_message, "Well done!")
+        self.assertEqual(self.route.completion_emoji, "🏆")
+
+    def test_clear_completion_fields(self):
+        self.route.completion_message = "Old msg"
+        self.route.completion_emoji = "🎉"
+        self.route.save()
+        self.client.post(reverse("route_edit", args=[self.route.pk]), {
+            "name": self.route.name,
+            "completion_message": "",
+            "completion_emoji": "",
+        })
+        self.route.refresh_from_db()
+        self.assertEqual(self.route.completion_message, "")
+        self.assertEqual(self.route.completion_emoji, "")
+
+
+class EmojiPickerTest(GMTestCase):
+    def setUp(self):
+        super().setUp()
+        self.route = make_route(owner=self.user)
+
+    def test_grid_renders_all_choices(self):
+        response = self.client.get(reverse("route_edit", args=[self.route.pk]))
+        for emoji in Route.COMPLETION_EMOJI_CHOICES:
+            self.assertContains(response, f'data-emoji="{emoji}"')
+
+    def test_selected_emoji_is_marked(self):
+        self.route.completion_emoji = "🏆"
+        self.route.save()
+        response = self.client.get(reverse("route_edit", args=[self.route.pk]))
+        self.assertContains(response, 'class="emoji-option selected" data-emoji="🏆"')
+
+    def test_no_emoji_selected_by_default(self):
+        response = self.client.get(reverse("route_edit", args=[self.route.pk]))
+        self.assertNotContains(response, "emoji-option selected")
+
+    def test_emoji_outside_choices_still_saves(self):
+        self.client.post(reverse("route_edit", args=[self.route.pk]), {
+            "name": self.route.name,
+            "completion_emoji": "🦆",
+        })
+        self.route.refresh_from_db()
+        self.assertEqual(self.route.completion_emoji, "🦆")
+
+
+class PlayFinishedTest(TestCase):
+    def _finish(self, route):
+        make_waypoint(route, order=0)
+        self.client.post(reverse("play_advance", args=[route.token]))
+        return self.client.get(reverse("play_game", args=[route.token]))
+
+    def test_shows_default_emoji_when_none_set(self):
+        route = make_route()
+        response = self._finish(route)
+        self.assertContains(response, "🎉")
+
+    def test_shows_custom_emoji(self):
+        route = make_route(completion_emoji="🏆")
+        response = self._finish(route)
+        self.assertContains(response, "🏆")
+        self.assertNotContains(response, "🎉")
+
+    def test_shows_custom_message(self):
+        route = make_route(completion_message="You did it!")
+        response = self._finish(route)
+        self.assertContains(response, "You did it!")
+
+    def test_no_message_block_when_empty(self):
+        route = make_route(completion_message="")
+        response = self._finish(route)
+        self.assertNotContains(response, "pre-wrap")
+
+
 class PlaySessionIsolationTest(TestCase):
     def test_separate_sessions_per_route(self):
         route_a = make_route(name="A")

@@ -3,3 +3,4 @@ db.sqlite3
 media/
 locale/**/*.mo
 *.zip
+**/__pycache__

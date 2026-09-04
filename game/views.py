@@ -57,10 +57,16 @@ def route_edit(request, pk):
         if name:
             route.name = name
             route.description = description
+            route.completion_message = request.POST.get("completion_message", "").strip()
+            route.completion_emoji = request.POST.get("completion_emoji", "").strip()
             route.save()
         return redirect("route_edit", pk=route.pk)
     waypoints = route.get_ordered_waypoints()
-    return render(request, "game/route_edit.html", {"route": route, "waypoints": waypoints})
+    return render(request, "game/route_edit.html", {
+        "route": route,
+        "waypoints": waypoints,
+        "emoji_choices": Route.COMPLETION_EMOJI_CHOICES,
+    })
 
 
 @login_required

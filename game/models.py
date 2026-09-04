@@ -6,18 +6,31 @@ from django.dispatch import receiver
 
 
 class Route(models.Model):
+    DEFAULT_COMPLETION_EMOJI = "🎉"
+    COMPLETION_EMOJI_CHOICES = [
+        "🎉", "🎊", "🥳", "🏆", "🎯", "⭐", "🌟", "✨",
+        "🥇", "🏅", "👏", "🙌", "💪", "🔥", "💯", "🎁",
+        "🗺️", "🧭", "📍", "🔍", "🚀", "🍾", "❤️", "🎈",
+    ]
+
     owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="routes", null=True)
     name = models.CharField(max_length=200)
     description = models.TextField(blank=True)
     token = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
+    completion_message = models.TextField(blank=True)
+    completion_emoji = models.CharField(max_length=10, blank=True)
 
     def __str__(self):
         return self.name
 
     def get_ordered_waypoints(self):
         return self.waypoints.order_by("order")
+
+    @property
+    def display_completion_emoji(self):
+        return self.completion_emoji or self.DEFAULT_COMPLETION_EMOJI
 
 
 class Waypoint(models.Model):

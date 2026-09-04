@@ -12,6 +12,13 @@
   .badge-question { background: #0d6efd; }
   .badge-proximity{ background: #198754; }
   #wp-modal .conditional { display: none; }
+  #emoji-grid { display: flex; flex-wrap: wrap; gap: 4px; }
+  .emoji-option {
+    font-size: 1.25rem; line-height: 1; padding: 4px 6px; cursor: pointer;
+    background: none; border: 1px solid transparent; border-radius: 6px;
+  }
+  .emoji-option:hover { background: #e9ecef; }
+  .emoji-option.selected { border-color: #0d6efd; background: #e7f1ff; }
 </style>
 {% endblock %}
 
@@ -37,6 +44,23 @@
       </div>
       <div class="mb-2">
         <textarea name="description" class="form-control form-control-sm" rows="2" placeholder="{% trans 'Description (shown to player on the intro screen)' %}">{{ route.description }}</textarea>
+      </div>
+      <div class="mb-2">
+        <label class="form-label form-label-sm text-muted mb-1">{% trans "Completion message" %} <span class="text-muted">({% trans "optional" %})</span></label>
+        <textarea name="completion_message" class="form-control form-control-sm" rows="2" placeholder="{% trans 'e.g. Well done! You found all the hidden locations.' %}">{{ route.completion_message }}</textarea>
+      </div>
+      <div class="mb-2">
+        <label class="form-label form-label-sm text-muted mb-1">{% trans "Completion emoji" %} <span class="text-muted">({% trans "optional" %})</span></label>
+        <div class="d-flex align-items-center gap-2 mb-2">
+          <input name="completion_emoji" id="completion-emoji" type="text" class="form-control form-control-sm"
+                 style="max-width:5rem;text-align:center" value="{{ route.completion_emoji }}" placeholder="🎉" maxlength="10">
+          <button type="button" class="btn btn-sm btn-outline-secondary" id="emoji-clear">{% trans "Clear" %}</button>
+        </div>
+        <div id="emoji-grid">
+          {% for e in emoji_choices %}
+          <button type="button" class="emoji-option{% if e == route.completion_emoji %} selected{% endif %}" data-emoji="{{ e }}">{{ e }}</button>
+          {% endfor %}
+        </div>
       </div>
       <button type="submit" class="btn btn-sm btn-outline-secondary">{% trans "Save" %}</button>
     </form>
@@ -367,6 +391,30 @@ function updateCount() {
   const n = document.querySelectorAll("#waypoint-list .waypoint-item").length;
   document.getElementById("wp-count").textContent = `(${n})`;
 }
+
+// --- Emoji picker ---
+const emojiInput = document.getElementById("completion-emoji");
+
+function syncEmojiSelection() {
+  document.querySelectorAll(".emoji-option").forEach(btn => {
+    btn.classList.toggle("selected", btn.dataset.emoji === emojiInput.value);
+  });
+}
+
+document.getElementById("emoji-grid").addEventListener("click", (e) => {
+  const btn = e.target.closest(".emoji-option");
+  if (!btn) return;
+  // clicking the already-selected emoji deselects it
+  emojiInput.value = btn.dataset.emoji === emojiInput.value ? "" : btn.dataset.emoji;
+  syncEmojiSelection();
+});
+
+document.getElementById("emoji-clear").addEventListener("click", () => {
+  emojiInput.value = "";
+  syncEmojiSelection();
+});
+
+emojiInput.addEventListener("input", syncEmojiSelection);
 
 // --- Drag to reorder ---
 Sortable.create(document.getElementById("waypoint-list"), {

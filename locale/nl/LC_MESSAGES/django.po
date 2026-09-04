@@ -189,6 +189,18 @@ msgstr "Routenaam"
 msgid "Description (shown to player on the intro screen)"
 msgstr "Beschrijving (getoond aan de speler op het introductiescherm)"
 
+msgid "Completion message"
+msgstr "Voltooiingsbericht"
+
+msgid "e.g. Well done! You found all the hidden locations."
+msgstr "bijv. Goed gedaan! Je hebt alle verborgen locaties gevonden."
+
+msgid "Completion emoji"
+msgstr "Voltooiingsemoji"
+
+msgid "Clear"
+msgstr "Wissen"
+
 #: game/templates/game/route_edit.html:41
 #: game/templates/game/route_edit.html:154
 msgid "Save"
