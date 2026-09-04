@@ -5,3 +5,11 @@ __pycache__
 db.sqlite3
 staticfiles
 .git
+.claude
+.cz.yaml
+.dockerignore
+.gitignore
+.pre-commit-config.yaml
+CLAUDE.md
+Docker*
+media/
