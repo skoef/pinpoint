@@ -85,6 +85,7 @@
     const PROXIMITY_M = {{ current.proximity_meters }};
     const ANSWER_ERROR = {{ answer_error|yesno:"true,false" }};
     let advanced = false;
+    let arrived = ANSWER_ERROR;  // already arrived if re-showing after a wrong answer
 
     // i18n strings for JS
     {% trans "Accuracy: ±{accuracy} m" as str_accuracy %}
@@ -104,7 +105,7 @@
       getWithin:     "{{ str_get_within|escapejs }}",
     };
 
-    if (ANSWER_ERROR) document.getElementById("advance-ui").style.display = "block";
+    if (arrived) document.getElementById("advance-ui").style.display = "block";
 
     function haversineMeters(lat1, lon1, lat2, lon2) {
       const R = 6371000;
@@ -128,9 +129,9 @@
       const d = haversineMeters(pos.coords.latitude, pos.coords.longitude, TARGET_LAT, TARGET_LNG);
       document.getElementById("distance").textContent = Math.round(d);
       setStatus(I18N.accuracy.replace("{accuracy}", Math.round(pos.coords.accuracy)), false);
-      revealAdvanceUI();
 
       if (ADVANCE_TYPE === "proximity") {
+        revealAdvanceUI();
         const pct = Math.max(0, Math.min(100, (1 - d / (PROXIMITY_M * 5)) * 100));
         document.getElementById("proximity-bar").style.width = pct + "%";
         const label = document.getElementById("proximity-label");
@@ -144,6 +145,11 @@
           label.textContent = I18N.getWithinAway
             .replace("{meters}", PROXIMITY_M)
             .replace("{distance}", Math.round(d));
+        }
+      } else {
+        if (!arrived && d <= PROXIMITY_M) {
+          arrived = true;
+          revealAdvanceUI();
         }
       }
     }
