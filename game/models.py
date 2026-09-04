@@ -1,6 +1,8 @@
 import uuid
 from django.conf import settings
 from django.db import models
+from django.db.models.signals import post_delete
+from django.dispatch import receiver
 
 
 class Route(models.Model):
@@ -39,6 +41,7 @@ class Waypoint(models.Model):
     question = models.TextField(blank=True)
     answer = models.CharField(max_length=500, blank=True)
     proximity_meters = models.PositiveIntegerField(default=20)
+    image = models.ImageField(upload_to="waypoints/", blank=True)
 
     class Meta:
         ordering = ["order"]
@@ -46,3 +49,9 @@ class Waypoint(models.Model):
     def __str__(self):
         label = self.label or f"Waypoint {self.order + 1}"
         return f"{self.route.name} — {label}"
+
+
+@receiver(post_delete, sender=Waypoint)
+def delete_waypoint_image(sender, instance, **kwargs):
+    if instance.image:
+        instance.image.delete(save=False)

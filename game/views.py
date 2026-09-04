@@ -78,38 +78,43 @@ def route_qr(request, pk):
 @require_POST
 def waypoint_add(request, pk):
     route = get_object_or_404(Route, pk=pk, owner=request.user)
-    data = json.loads(request.body)
     order = route.waypoints.count()
     wp = Waypoint.objects.create(
         route=route,
         order=order,
-        lat=data["lat"],
-        lng=data["lng"],
-        label=data.get("label", ""),
-        advance_type=data.get("advance_type", Waypoint.BUTTON),
-        button_text=data.get("button_text", ""),
-        button_caption=data.get("button_caption", ""),
-        question=data.get("question", ""),
-        answer=data.get("answer", ""),
-        proximity_meters=int(data.get("proximity_meters", 20)),
+        lat=request.POST["lat"],
+        lng=request.POST["lng"],
+        label=request.POST.get("label", ""),
+        advance_type=request.POST.get("advance_type", Waypoint.BUTTON),
+        button_text=request.POST.get("button_text", ""),
+        button_caption=request.POST.get("button_caption", ""),
+        question=request.POST.get("question", ""),
+        answer=request.POST.get("answer", ""),
+        proximity_meters=int(request.POST.get("proximity_meters", 20)),
     )
-    return JsonResponse(_wp_json(wp))
+    if request.FILES.get("image"):
+        wp.image = request.FILES["image"]
+        wp.save(update_fields=["image"])
+    return JsonResponse(_wp_json(wp, request))
 
 
 @login_required
 @require_POST
 def waypoint_update(request, pk):
     wp = get_object_or_404(Waypoint, pk=pk, route__owner=request.user)
-    data = json.loads(request.body)
-    wp.label = data.get("label", wp.label)
-    wp.advance_type = data.get("advance_type", wp.advance_type)
-    wp.button_text = data.get("button_text", wp.button_text)
-    wp.button_caption = data.get("button_caption", wp.button_caption)
-    wp.question = data.get("question", wp.question)
-    wp.answer = data.get("answer", wp.answer)
-    wp.proximity_meters = int(data.get("proximity_meters", wp.proximity_meters))
+    wp.label = request.POST.get("label", wp.label)
+    wp.advance_type = request.POST.get("advance_type", wp.advance_type)
+    wp.button_text = request.POST.get("button_text", wp.button_text)
+    wp.button_caption = request.POST.get("button_caption", wp.button_caption)
+    wp.question = request.POST.get("question", wp.question)
+    wp.answer = request.POST.get("answer", wp.answer)
+    wp.proximity_meters = int(request.POST.get("proximity_meters", wp.proximity_meters))
+    if request.FILES.get("image"):
+        wp.image = request.FILES["image"]
+    elif request.POST.get("clear_image") == "1":
+        wp.image = None
     wp.save()
-    return JsonResponse(_wp_json(wp))
+    return JsonResponse(_wp_json(wp, request))
 
 
 @login_required
@@ -134,7 +139,10 @@ def waypoint_reorder(request, pk):
     return JsonResponse({"ok": True})
 
 
-def _wp_json(wp):
+def _wp_json(wp, request=None):
+    image_url = ""
+    if wp.image:
+        image_url = request.build_absolute_uri(wp.image.url) if request else wp.image.url
     return {
         "id": wp.pk,
         "order": wp.order,
@@ -147,6 +155,7 @@ def _wp_json(wp):
         "question": wp.question,
         "answer": wp.answer,
         "proximity_meters": wp.proximity_meters,
+        "image_url": image_url,
     }
 
 

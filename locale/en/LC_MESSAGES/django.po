@@ -4,7 +4,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: speurtocht\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-09-03 14:28+0000\n"
+"POT-Creation-Date: 2026-09-03 15:36+0000\n"
 "PO-Revision-Date: 2026-09-03 12:13+0000\n"
 "Language-Team: English\n"
 "Language: en\n"
@@ -42,37 +42,37 @@ msgstr "Waypoint %(num)s of %(total)s"
 msgid "Waiting for location…"
 msgstr "Waiting for location…"
 
-#: game/templates/game/play.html:38 game/templates/game/play.html:60
+#: game/templates/game/play.html:43 game/templates/game/play.html:65
 msgid "Finish"
 msgstr "Finish"
 
-#: game/templates/game/play.html:38 game/templates/game/play.html:60
+#: game/templates/game/play.html:43 game/templates/game/play.html:65
 msgid "Next waypoint"
 msgstr "Next waypoint"
 
-#: game/templates/game/play.html:49
+#: game/templates/game/play.html:54
 msgid "Your answer…"
 msgstr "Your answer…"
 
-#: game/templates/game/play.html:51
+#: game/templates/game/play.html:56
 msgid "That's not correct, try again."
 msgstr "That's not correct, try again."
 
-#: game/templates/game/play.html:53
+#: game/templates/game/play.html:58
 msgid "Submit"
 msgstr "Submit"
 
-#: game/templates/game/play.html:70
+#: game/templates/game/play.html:75
 #, python-format
 msgid "Get within %(meters)s m to continue"
 msgstr "Get within %(meters)s m to continue"
 
-#: game/templates/game/play.html:85
+#: game/templates/game/play.html:90
 #, python-brace-format
 msgid "Accuracy: ±{accuracy} m"
 msgstr "Accuracy: ±{accuracy} m"
 
-#: game/templates/game/play.html:86
+#: game/templates/game/play.html:91
 msgid ""
 "Could not detect your location. Make sure location access is enabled in your "
 "browser and device settings."
@@ -80,24 +80,24 @@ msgstr ""
 "Could not detect your location. Make sure location access is enabled in your "
 "browser and device settings."
 
-#: game/templates/game/play.html:87
+#: game/templates/game/play.html:92
 msgid "Location access denied. Enable it in your browser settings and reload."
 msgstr "Location access denied. Enable it in your browser settings and reload."
 
-#: game/templates/game/play.html:88
+#: game/templates/game/play.html:93
 msgid "Geolocation is not supported by this browser."
 msgstr "Geolocation is not supported by this browser."
 
-#: game/templates/game/play.html:89
+#: game/templates/game/play.html:94
 msgid "Close enough — advancing…"
 msgstr "Close enough — advancing…"
 
-#: game/templates/game/play.html:90
+#: game/templates/game/play.html:95
 #, python-brace-format
 msgid "Get within {meters} m to continue ({distance} m away)"
 msgstr "Get within {meters} m to continue ({distance} m away)"
 
-#: game/templates/game/play.html:91
+#: game/templates/game/play.html:96
 #, python-brace-format
 msgid "Get within {meters} m to continue"
 msgstr "Get within {meters} m to continue"
@@ -182,7 +182,7 @@ msgid "Description (shown to player on the intro screen)"
 msgstr "Description (shown to player on the intro screen)"
 
 #: game/templates/game/route_edit.html:41
-#: game/templates/game/route_edit.html:141
+#: game/templates/game/route_edit.html:154
 msgid "Save"
 msgstr "Save"
 
@@ -190,102 +190,111 @@ msgstr "Save"
 msgid "Waypoints"
 msgstr "Waypoints"
 
-#: game/templates/game/route_edit.html:72
+#: game/templates/game/route_edit.html:73
 msgid "No waypoints yet."
 msgstr "No waypoints yet."
 
-#: game/templates/game/route_edit.html:77
+#: game/templates/game/route_edit.html:78
 msgid "Share link:"
 msgstr "Share link:"
 
-#: game/templates/game/route_edit.html:88
-#: game/templates/game/route_edit.html:152
+#: game/templates/game/route_edit.html:89
+#: game/templates/game/route_edit.html:165
 msgid "Add waypoint"
 msgstr "Add waypoint"
 
-#: game/templates/game/route_edit.html:97
+#: game/templates/game/route_edit.html:98
 msgid "Label"
 msgstr "Label"
 
-#: game/templates/game/route_edit.html:97
-#: game/templates/game/route_edit.html:116
+#: game/templates/game/route_edit.html:98
+#: game/templates/game/route_edit.html:117
+#: game/templates/game/route_edit.html:141
 #: game/templates/game/route_form.html:14
 msgid "optional"
 msgstr "optional"
 
-#: game/templates/game/route_edit.html:98
+#: game/templates/game/route_edit.html:99
 msgid "e.g. The old oak tree"
 msgstr "e.g. The old oak tree"
 
-#: game/templates/game/route_edit.html:102
+#: game/templates/game/route_edit.html:103
 msgid "Advance type"
 msgstr "Advance type"
 
-#: game/templates/game/route_edit.html:104
+#: game/templates/game/route_edit.html:105
 msgid "Button — player taps to continue"
 msgstr "Button — player taps to continue"
 
-#: game/templates/game/route_edit.html:105
+#: game/templates/game/route_edit.html:106
 msgid "Question / Riddle — player must answer correctly"
 msgstr "Question / Riddle — player must answer correctly"
 
-#: game/templates/game/route_edit.html:106
+#: game/templates/game/route_edit.html:107
 msgid "Auto-proximity — advances when close enough"
 msgstr "Auto-proximity — advances when close enough"
 
-#: game/templates/game/route_edit.html:112
+#: game/templates/game/route_edit.html:113
 msgid "Text"
 msgstr "Text"
 
-#: game/templates/game/route_edit.html:112
+#: game/templates/game/route_edit.html:113
 msgid "shown above the button, optional"
 msgstr "shown above the button, optional"
 
-#: game/templates/game/route_edit.html:113
+#: game/templates/game/route_edit.html:114
 msgid "e.g. You found the hidden chest! Open it and note down the code inside."
 msgstr ""
 "e.g. You found the hidden chest! Open it and note down the code inside."
 
-#: game/templates/game/route_edit.html:116
+#: game/templates/game/route_edit.html:117
 msgid "Button caption"
 msgstr "Button caption"
 
-#: game/templates/game/route_edit.html:117
+#: game/templates/game/route_edit.html:118
 msgid "e.g. I found it!"
 msgstr "e.g. I found it!"
 
-#: game/templates/game/route_edit.html:123
+#: game/templates/game/route_edit.html:124
 msgid "Question or riddle"
 msgstr "Question or riddle"
 
-#: game/templates/game/route_edit.html:124
+#: game/templates/game/route_edit.html:125
 msgid "e.g. What year was this bridge built?"
 msgstr "e.g. What year was this bridge built?"
 
-#: game/templates/game/route_edit.html:127
+#: game/templates/game/route_edit.html:128
 msgid "Correct answer"
 msgstr "Correct answer"
 
-#: game/templates/game/route_edit.html:127
+#: game/templates/game/route_edit.html:128
 msgid "case-insensitive"
 msgstr "case-insensitive"
 
-#: game/templates/game/route_edit.html:134
+#: game/templates/game/route_edit.html:135
 msgid "Auto-advance radius (meters)"
 msgstr "Auto-advance radius (meters)"
 
-#: game/templates/game/route_edit.html:140
+#: game/templates/game/route_edit.html:141
+msgid "Image"
+msgstr "Image"
+
+#: game/templates/game/route_edit.html:146
+msgid "Remove image"
+msgstr "Remove image"
+
+#: game/templates/game/route_edit.html:153
 #: game/templates/game/route_form.html:19
 #: game/templates/game/route_list.html:64
 msgid "Cancel"
 msgstr "Cancel"
 
-#: game/templates/game/route_edit.html:153
+#: game/templates/game/route_edit.html:166
 msgid "Edit waypoint"
 msgstr "Edit waypoint"
 
-#: game/templates/game/route_edit.html:154
-#: game/templates/game/route_edit.html:181
+#: game/templates/game/route_edit.html:167
+#: game/templates/game/route_edit.html:194
 msgid "Waypoint"
 msgstr "Waypoint"
 

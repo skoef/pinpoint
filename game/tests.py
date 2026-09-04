@@ -1,10 +1,14 @@
+import io
 import json
 
 from django.contrib.auth.models import User
-from django.test import TestCase
+from django.core.files.storage import InMemoryStorage
+from django.test import TestCase, override_settings
 from django.urls import reverse
 
 from .models import Route, Waypoint
+
+IN_MEMORY_STORAGE = override_settings(DEFAULT_FILE_STORAGE="django.core.files.storage.InMemoryStorage")
 
 
 # ---------------------------------------------------------------------------
@@ -32,6 +36,13 @@ def make_waypoint(route, order=0, advance_type=Waypoint.BUTTON, **kwargs):
 
 def post_json(client, url, data):
     return client.post(url, json.dumps(data), content_type="application/json")
+
+
+def post_form(client, url, data, files=None):
+    payload = dict(data)
+    if files:
+        payload.update(files)
+    return client.post(url, payload)
 
 
 # ---------------------------------------------------------------------------
@@ -106,7 +117,7 @@ class OwnershipTest(TestCase):
 
     def test_cannot_add_waypoint_to_other_users_route(self):
         route = make_route(owner=self.other)
-        response = post_json(self.client, reverse("waypoint_add", args=[route.pk]),
+        response = post_form(self.client, reverse("waypoint_add", args=[route.pk]),
                              {"lat": 52.0, "lng": 4.0})
         self.assertEqual(response.status_code, 404)
 
@@ -260,33 +271,49 @@ class WaypointAddTest(GMTestCase):
         self.route = make_route(owner=self.user)
 
     def test_creates_waypoint(self):
-        post_json(self.client, reverse("waypoint_add", args=[self.route.pk]),
+        post_form(self.client, reverse("waypoint_add", args=[self.route.pk]),
                   {"lat": 52.1, "lng": 4.1, "label": "Start"})
         self.assertEqual(self.route.waypoints.count(), 1)
         wp = self.route.waypoints.first()
         self.assertEqual(wp.label, "Start")
 
     def test_returns_json(self):
-        response = post_json(self.client, reverse("waypoint_add", args=[self.route.pk]),
+        response = post_form(self.client, reverse("waypoint_add", args=[self.route.pk]),
                              {"lat": 52.1, "lng": 4.1})
         data = response.json()
         self.assertIn("id", data)
         self.assertAlmostEqual(data["lat"], 52.1, places=4)
 
     def test_order_increments(self):
-        post_json(self.client, reverse("waypoint_add", args=[self.route.pk]), {"lat": 52.1, "lng": 4.1})
-        post_json(self.client, reverse("waypoint_add", args=[self.route.pk]), {"lat": 52.2, "lng": 4.2})
+        post_form(self.client, reverse("waypoint_add", args=[self.route.pk]), {"lat": 52.1, "lng": 4.1})
+        post_form(self.client, reverse("waypoint_add", args=[self.route.pk]), {"lat": 52.2, "lng": 4.2})
         orders = list(self.route.waypoints.order_by("order").values_list("order", flat=True))
         self.assertEqual(orders, [0, 1])
 
     def test_stores_advance_type_and_question(self):
-        post_json(self.client, reverse("waypoint_add", args=[self.route.pk]),
+        post_form(self.client, reverse("waypoint_add", args=[self.route.pk]),
                   {"lat": 52.1, "lng": 4.1, "advance_type": "question",
                    "question": "What colour?", "answer": "red"})
         wp = self.route.waypoints.first()
         self.assertEqual(wp.advance_type, Waypoint.QUESTION)
         self.assertEqual(wp.question, "What colour?")
         self.assertEqual(wp.answer, "red")
+
+    @IN_MEMORY_STORAGE
+    def test_upload_image(self):
+        img = io.BytesIO(
+            b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01"
+            b"\x08\x02\x00\x00\x00\x90wS\xde\x00\x00\x00\x0cIDATx\x9cc\xf8\x0f\x00"
+            b"\x00\x01\x01\x00\x05\x18\xd4\xd9\x00\x00\x00\x00IEND\xaeB`\x82"
+        )
+        img.name = "test.png"
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        upload = SimpleUploadedFile("test.png", img.read(), content_type="image/png")
+        response = post_form(self.client, reverse("waypoint_add", args=[self.route.pk]),
+                             {"lat": 52.1, "lng": 4.1}, files={"image": upload})
+        wp = self.route.waypoints.first()
+        self.assertTrue(bool(wp.image))
+        self.assertIn("image_url", response.json())
 
 
 class WaypointUpdateTest(GMTestCase):
@@ -296,19 +323,30 @@ class WaypointUpdateTest(GMTestCase):
         self.wp = make_waypoint(self.route, label="Old", advance_type=Waypoint.BUTTON)
 
     def test_updates_label(self):
-        post_json(self.client, reverse("waypoint_update", args=[self.wp.pk]),
+        post_form(self.client, reverse("waypoint_update", args=[self.wp.pk]),
                   {"label": "New", "advance_type": "button", "button_text": "",
                    "button_caption": "", "question": "", "answer": "", "proximity_meters": 20})
         self.wp.refresh_from_db()
         self.assertEqual(self.wp.label, "New")
 
     def test_updates_advance_type(self):
-        post_json(self.client, reverse("waypoint_update", args=[self.wp.pk]),
+        post_form(self.client, reverse("waypoint_update", args=[self.wp.pk]),
                   {"label": "", "advance_type": "proximity", "button_text": "",
                    "button_caption": "", "question": "", "answer": "", "proximity_meters": 50})
         self.wp.refresh_from_db()
         self.assertEqual(self.wp.advance_type, Waypoint.PROXIMITY)
         self.assertEqual(self.wp.proximity_meters, 50)
+
+    @IN_MEMORY_STORAGE
+    def test_clear_image(self):
+        from django.core.files.base import ContentFile
+        self.wp.image.save("test.png", ContentFile(b"fake"), save=True)
+        post_form(self.client, reverse("waypoint_update", args=[self.wp.pk]),
+                  {"label": "Old", "advance_type": "button", "button_text": "",
+                   "button_caption": "", "question": "", "answer": "",
+                   "proximity_meters": 20, "clear_image": "1"})
+        self.wp.refresh_from_db()
+        self.assertFalse(bool(self.wp.image))
 
 
 class WaypointDeleteTest(GMTestCase):
@@ -333,6 +371,27 @@ class WaypointDeleteTest(GMTestCase):
         wp = make_waypoint(self.route)
         response = post_json(self.client, reverse("waypoint_delete", args=[wp.pk]), {})
         self.assertEqual(response.json(), {"ok": True})
+
+    @IN_MEMORY_STORAGE
+    def test_deleting_waypoint_removes_image(self):
+        from django.core.files.base import ContentFile
+        wp = make_waypoint(self.route)
+        wp.image.save("test.png", ContentFile(b"fake"), save=True)
+        image_name = wp.image.name
+        post_json(self.client, reverse("waypoint_delete", args=[wp.pk]), {})
+        from django.core.files.storage import default_storage
+        self.assertFalse(default_storage.exists(image_name))
+
+    @IN_MEMORY_STORAGE
+    def test_deleting_route_removes_waypoint_images(self):
+        from django.core.files.base import ContentFile
+        route = make_route(active=False, owner=self.user)
+        wp = make_waypoint(route)
+        wp.image.save("test.png", ContentFile(b"fake"), save=True)
+        image_name = wp.image.name
+        self.client.post(reverse("route_delete", args=[route.pk]))
+        from django.core.files.storage import default_storage
+        self.assertFalse(default_storage.exists(image_name))
 
 
 class WaypointReorderTest(GMTestCase):

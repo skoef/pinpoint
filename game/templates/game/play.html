@@ -26,6 +26,11 @@
     <p id="status-msg">{% trans "Waiting for location…" %}</p>
 
     <div id="advance-ui" style="display:none">
+      {% if current.image %}
+      <div class="mt-4">
+        <img src="{{ current.image.url }}" alt="" class="img-fluid rounded" style="max-height:300px">
+      </div>
+      {% endif %}
       {% if current.advance_type == 'button' %}
         {% if current.button_text %}
         <div class="mt-4 p-3 rounded" style="background:#161b22; text-align:left;">

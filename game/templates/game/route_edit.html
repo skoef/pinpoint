@@ -55,7 +55,8 @@
           data-button-caption="{{ wp.button_caption }}"
           data-question="{{ wp.question }}"
           data-answer="{{ wp.answer }}"
-          data-proximity="{{ wp.proximity_meters }}">
+          data-proximity="{{ wp.proximity_meters }}"
+          data-image-url="{% if wp.image %}{{ request.scheme }}://{{ request.get_host }}{{ wp.image.url }}{% endif %}">
         <span class="d-flex align-items-center gap-2 flex-grow-1 overflow-hidden">
           <span class="badge bg-secondary flex-shrink-0">{{ forloop.counter }}</span>
           <span class="badge badge-{{ wp.advance_type }} text-white flex-shrink-0">
@@ -135,6 +136,18 @@
             <input type="number" class="form-control" id="modal-proximity" value="20" min="5" max="500">
           </div>
         </div>
+
+        <div class="mb-3">
+          <label class="form-label">{% trans "Image" %} <span class="text-muted">({% trans "optional" %})</span></label>
+          <div id="modal-image-preview" class="mb-2" style="display:none">
+            <img id="modal-image-preview-img" src="" alt="" class="img-fluid rounded" style="max-height:160px">
+            <div class="form-check mt-1">
+              <input class="form-check-input" type="checkbox" id="modal-clear-image">
+              <label class="form-check-label text-muted small" for="modal-clear-image">{% trans "Remove image" %}</label>
+            </div>
+          </div>
+          <input type="file" class="form-control" id="modal-image" accept="image/*">
+        </div>
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{% trans "Cancel" %}</button>
@@ -192,11 +205,11 @@ map.fitBounds([[Math.min(...lats), Math.min(...lngs)], [Math.max(...lats), Math.
 
 map.on("click", (e) => {
   pendingLatLng = e.latlng;
-  openModal(null, e.latlng.lat, e.latlng.lng, "", "button", "", "", "", "", 20);
+  openModal(null, e.latlng.lat, e.latlng.lng, "", "button", "", "", "", "", 20, "");
 });
 
 // --- Modal helpers ---
-function openModal(wpId, lat, lng, label, advanceType, buttonText, buttonCaption, question, answer, proximity) {
+function openModal(wpId, lat, lng, label, advanceType, buttonText, buttonCaption, question, answer, proximity, imageUrl) {
   document.getElementById("modal-wp-id").value = wpId || "";
   document.getElementById("modal-lat").value = lat;
   document.getElementById("modal-lng").value = lng;
@@ -207,6 +220,15 @@ function openModal(wpId, lat, lng, label, advanceType, buttonText, buttonCaption
   document.getElementById("modal-question").value = question;
   document.getElementById("modal-answer").value = answer;
   document.getElementById("modal-proximity").value = proximity;
+  document.getElementById("modal-image").value = "";
+  document.getElementById("modal-clear-image").checked = false;
+  const preview = document.getElementById("modal-image-preview");
+  if (imageUrl) {
+    document.getElementById("modal-image-preview-img").src = imageUrl;
+    preview.style.display = "block";
+  } else {
+    preview.style.display = "none";
+  }
   document.getElementById("modal-title").textContent = wpId ? STR_EDIT_WAYPOINT : STR_ADD_WAYPOINT;
   updateConditionals();
   wpModal.show();
@@ -222,35 +244,28 @@ function updateConditionals() {
 }
 
 document.getElementById("modal-save").addEventListener("click", async () => {
-  const wpId   = document.getElementById("modal-wp-id").value;
-  const lat    = parseFloat(document.getElementById("modal-lat").value);
-  const lng    = parseFloat(document.getElementById("modal-lng").value);
-  const payload = {
-    lat,
-    lng,
-    label:            document.getElementById("modal-label").value,
-    advance_type:     document.getElementById("modal-advance-type").value,
-    button_text:      document.getElementById("modal-button-text").value,
-    button_caption:   document.getElementById("modal-button-caption").value,
-    question:         document.getElementById("modal-question").value,
-    answer:           document.getElementById("modal-answer").value,
-    proximity_meters: parseInt(document.getElementById("modal-proximity").value) || 20,
-  };
+  const wpId = document.getElementById("modal-wp-id").value;
+  const fd = new FormData();
+  fd.append("csrfmiddlewaretoken", CSRF);
+  fd.append("lat",              document.getElementById("modal-lat").value);
+  fd.append("lng",              document.getElementById("modal-lng").value);
+  fd.append("label",            document.getElementById("modal-label").value);
+  fd.append("advance_type",     document.getElementById("modal-advance-type").value);
+  fd.append("button_text",      document.getElementById("modal-button-text").value);
+  fd.append("button_caption",   document.getElementById("modal-button-caption").value);
+  fd.append("question",         document.getElementById("modal-question").value);
+  fd.append("answer",           document.getElementById("modal-answer").value);
+  fd.append("proximity_meters", parseInt(document.getElementById("modal-proximity").value) || 20);
+  const imageFile = document.getElementById("modal-image").files[0];
+  if (imageFile) fd.append("image", imageFile);
+  if (document.getElementById("modal-clear-image").checked) fd.append("clear_image", "1");
 
   if (wpId) {
-    const res = await fetch(`/waypoints/${wpId}/update/`, {
-      method: "POST",
-      headers: {"Content-Type": "application/json", "X-CSRFToken": CSRF},
-      body: JSON.stringify(payload),
-    });
+    const res = await fetch(`/waypoints/${wpId}/update/`, {method: "POST", body: fd});
     const wp = await res.json();
     updateWaypointInList(wp);
   } else {
-    const res = await fetch(`/routes/${ROUTE_PK}/waypoints/add/`, {
-      method: "POST",
-      headers: {"Content-Type": "application/json", "X-CSRFToken": CSRF},
-      body: JSON.stringify(payload),
-    });
+    const res = await fetch(`/routes/${ROUTE_PK}/waypoints/add/`, {method: "POST", body: fd});
     const wp = await res.json();
     addWaypointToList(wp);
     const order = document.querySelectorAll("#waypoint-list .waypoint-item").length;
@@ -280,6 +295,7 @@ function makeLi(wp, order) {
   li.dataset.question = wp.question;
   li.dataset.answer = wp.answer;
   li.dataset.proximity = wp.proximity_meters;
+  li.dataset.imageUrl = wp.image_url || "";
   li.innerHTML = `
     <span class="d-flex align-items-center gap-2 flex-grow-1 overflow-hidden">
       <span class="badge bg-secondary flex-shrink-0">${order}</span>
@@ -336,6 +352,7 @@ document.getElementById("waypoint-list").addEventListener("click", async (e) => 
       li.dataset.question,
       li.dataset.answer,
       parseInt(li.dataset.proximity),
+      li.dataset.imageUrl || "",
     );
   }
 });
