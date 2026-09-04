@@ -1,0 +1,21 @@
+{% extends "game/base.html" %}
+{% block title %}New Route — Speurtocht{% endblock %}
+
+{% block content %}
+<h1 class="h3 mb-4">New Route</h1>
+<form method="post" class="row g-3" style="max-width:500px">
+  {% csrf_token %}
+  <div class="col-12">
+    <label class="form-label">Name</label>
+    <input name="name" type="text" class="form-control" required autofocus>
+  </div>
+  <div class="col-12">
+    <label class="form-label">Description <span class="text-muted">(optional)</span></label>
+    <textarea name="description" class="form-control" rows="2"></textarea>
+  </div>
+  <div class="col-12">
+    <button type="submit" class="btn btn-primary">Create &amp; add waypoints</button>
+    <a href="{% url 'route_list' %}" class="btn btn-link">Cancel</a>
+  </div>
+</form>
+{% endblock %}

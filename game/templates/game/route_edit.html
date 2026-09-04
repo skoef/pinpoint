@@ -1,0 +1,360 @@
+{% extends "game/base.html" %}
+{% block title %}{{ route.name }} — Edit{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+  #map { height: 400px; cursor: crosshair; }
+  .waypoint-item { cursor: grab; }
+  .waypoint-item:active { cursor: grabbing; }
+  .badge-button   { background: #6c757d; }
+  .badge-question { background: #0d6efd; }
+  .badge-proximity{ background: #198754; }
+  #wp-modal .conditional { display: none; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h1 class="h3 mb-0">{{ route.name }}</h1>
+  <div class="d-flex gap-2">
+    <a href="{% url 'route_qr' route.pk %}" target="_blank" class="btn btn-sm btn-outline-dark">QR code</a>
+    <a href="{% url 'play' route.token %}" target="_blank" class="btn btn-sm btn-outline-success">Play link</a>
+    <a href="{% url 'route_list' %}" class="btn btn-sm btn-outline-secondary">Back</a>
+  </div>
+</div>
+
+<div class="row g-4">
+  <div class="col-lg-7">
+    <p class="text-muted small mb-1">Click on the map to add a waypoint.</p>
+    <div id="map" class="rounded border mb-3"></div>
+
+    <form method="post" class="mb-2">
+      {% csrf_token %}
+      <div class="mb-2">
+        <input name="name" type="text" class="form-control form-control-sm" value="{{ route.name }}" required placeholder="Route name">
+      </div>
+      <div class="mb-2">
+        <textarea name="description" class="form-control form-control-sm" rows="2" placeholder="Description (shown to player on the intro screen)">{{ route.description }}</textarea>
+      </div>
+      <button type="submit" class="btn btn-sm btn-outline-secondary">Save</button>
+    </form>
+  </div>
+
+  <div class="col-lg-5">
+    <h2 class="h6 mb-2">Waypoints <span class="text-muted" id="wp-count">({{ waypoints|length }})</span></h2>
+    <ul class="list-group" id="waypoint-list">
+      {% for wp in waypoints %}
+      <li class="list-group-item waypoint-item d-flex justify-content-between align-items-center gap-2"
+          data-id="{{ wp.pk }}"
+          data-lat="{{ wp.lat }}" data-lng="{{ wp.lng }}"
+          data-label="{{ wp.label }}"
+          data-advance-type="{{ wp.advance_type }}"
+          data-button-text="{{ wp.button_text }}"
+          data-button-caption="{{ wp.button_caption }}"
+          data-question="{{ wp.question }}"
+          data-answer="{{ wp.answer }}"
+          data-proximity="{{ wp.proximity_meters }}">
+        <span class="d-flex align-items-center gap-2 flex-grow-1 overflow-hidden">
+          <span class="badge bg-secondary flex-shrink-0">{{ forloop.counter }}</span>
+          <span class="badge badge-{{ wp.advance_type }} text-white flex-shrink-0">
+            {% if wp.advance_type == 'button' %}btn{% elif wp.advance_type == 'question' %}?{% else %}~{{ wp.proximity_meters }}m{% endif %}
+          </span>
+          <span class="text-truncate small">{{ wp.label|default:wp.lat }}</span>
+        </span>
+        <div class="d-flex gap-1 flex-shrink-0">
+          <button class="btn btn-sm btn-outline-primary btn-edit" data-id="{{ wp.pk }}">&#9998;</button>
+          <button class="btn btn-sm btn-outline-danger btn-delete" data-id="{{ wp.pk }}">&times;</button>
+        </div>
+      </li>
+      {% empty %}
+      <li class="list-group-item text-muted" id="empty-msg">No waypoints yet.</li>
+      {% endfor %}
+    </ul>
+
+    <div class="mt-3 p-3 bg-light rounded border">
+      <strong>Share link:</strong><br>
+      <a href="{% url 'play' route.token %}">{{ request.scheme }}://{{ request.get_host }}{% url 'play' route.token %}</a>
+    </div>
+  </div>
+</div>
+
+<!-- Waypoint modal -->
+<div class="modal fade" id="wp-modal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="modal-title">Add waypoint</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="modal-wp-id">
+        <input type="hidden" id="modal-lat">
+        <input type="hidden" id="modal-lng">
+
+        <div class="mb-3">
+          <label class="form-label">Label <span class="text-muted">(optional)</span></label>
+          <input type="text" class="form-control" id="modal-label" placeholder="e.g. The old oak tree">
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label">Advance type</label>
+          <select class="form-select" id="modal-advance-type">
+            <option value="button">Button — player taps to continue</option>
+            <option value="question">Question / Riddle — player must answer correctly</option>
+            <option value="proximity">Auto-proximity — advances when close enough</option>
+          </select>
+        </div>
+
+        <div class="conditional" id="cond-button">
+          <div class="mb-3">
+            <label class="form-label">Text <span class="text-muted">(shown above the button, optional)</span></label>
+            <textarea class="form-control" id="modal-button-text" rows="3" placeholder="e.g. You found the hidden chest! Open it and note down the code inside."></textarea>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Button caption <span class="text-muted">(optional)</span></label>
+            <input type="text" class="form-control" id="modal-button-caption" placeholder="e.g. I found it!">
+          </div>
+        </div>
+
+        <div class="conditional" id="cond-question">
+          <div class="mb-3">
+            <label class="form-label">Question or riddle</label>
+            <textarea class="form-control" id="modal-question" rows="3" placeholder="What year was this bridge built?"></textarea>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Correct answer <span class="text-muted">(case-insensitive)</span></label>
+            <input type="text" class="form-control" id="modal-answer">
+          </div>
+        </div>
+
+        <div class="conditional" id="cond-proximity">
+          <div class="mb-3">
+            <label class="form-label">Auto-advance radius (meters)</label>
+            <input type="number" class="form-control" id="modal-proximity" value="20" min="5" max="500">
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary" id="modal-save">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
+<script>
+const ROUTE_PK = {{ route.pk }};
+const CSRF = "{{ csrf_token }}";
+const wpModal = new bootstrap.Modal(document.getElementById("wp-modal"));
+let pendingLatLng = null;
+
+// --- Map ---
+const map = L.map("map").setView([52.3, 5.3], 7);
+L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+  attribution: "© OpenStreetMap contributors"
+}).addTo(map);
+
+const markers = {};
+
+function numberIcon(n) {
+  return L.divIcon({
+    className: "",
+    html: `<div style="background:#0d6efd;color:#fff;border-radius:50%;width:28px;height:28px;
+                        display:flex;align-items:center;justify-content:center;font-size:13px;
+                        font-weight:bold;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.4)">${n}</div>`,
+    iconSize: [28, 28], iconAnchor: [14, 14],
+  });
+}
+
+{% for wp in waypoints %}
+markers[{{ wp.pk }}] = L.marker([{{ wp.lat }}, {{ wp.lng }}], {icon: numberIcon({{ forloop.counter }})})
+  .addTo(map).bindPopup("{{ wp.label|default:'Waypoint' }} #{{ forloop.counter }}");
+{% endfor %}
+
+{% if waypoints %}
+const lats = [{% for wp in waypoints %}{{ wp.lat }},{% endfor %}];
+const lngs = [{% for wp in waypoints %}{{ wp.lng }},{% endfor %}];
+map.fitBounds([[Math.min(...lats), Math.min(...lngs)], [Math.max(...lats), Math.max(...lngs)]], {padding:[40,40]});
+{% endif %}
+
+map.on("click", (e) => {
+  pendingLatLng = e.latlng;
+  openModal(null, e.latlng.lat, e.latlng.lng, "", "button", "", "", "", "", 20);
+});
+
+// --- Modal helpers ---
+function openModal(wpId, lat, lng, label, advanceType, buttonText, buttonCaption, question, answer, proximity) {
+  document.getElementById("modal-wp-id").value = wpId || "";
+  document.getElementById("modal-lat").value = lat;
+  document.getElementById("modal-lng").value = lng;
+  document.getElementById("modal-label").value = label;
+  document.getElementById("modal-advance-type").value = advanceType;
+  document.getElementById("modal-button-text").value = buttonText;
+  document.getElementById("modal-button-caption").value = buttonCaption;
+  document.getElementById("modal-question").value = question;
+  document.getElementById("modal-answer").value = answer;
+  document.getElementById("modal-proximity").value = proximity;
+  document.getElementById("modal-title").textContent = wpId ? "Edit waypoint" : "Add waypoint";
+  updateConditionals();
+  wpModal.show();
+}
+
+document.getElementById("modal-advance-type").addEventListener("change", updateConditionals);
+
+function updateConditionals() {
+  const type = document.getElementById("modal-advance-type").value;
+  document.getElementById("cond-button").style.display   = type === "button"    ? "block" : "none";
+  document.getElementById("cond-question").style.display = type === "question"  ? "block" : "none";
+  document.getElementById("cond-proximity").style.display= type === "proximity" ? "block" : "none";
+}
+
+document.getElementById("modal-save").addEventListener("click", async () => {
+  const wpId   = document.getElementById("modal-wp-id").value;
+  const lat    = parseFloat(document.getElementById("modal-lat").value);
+  const lng    = parseFloat(document.getElementById("modal-lng").value);
+  const payload = {
+    lat,
+    lng,
+    label:            document.getElementById("modal-label").value,
+    advance_type:     document.getElementById("modal-advance-type").value,
+    button_text:      document.getElementById("modal-button-text").value,
+    button_caption:   document.getElementById("modal-button-caption").value,
+    question:         document.getElementById("modal-question").value,
+    answer:           document.getElementById("modal-answer").value,
+    proximity_meters: parseInt(document.getElementById("modal-proximity").value) || 20,
+  };
+
+  if (wpId) {
+    const res = await fetch(`/waypoints/${wpId}/update/`, {
+      method: "POST",
+      headers: {"Content-Type": "application/json", "X-CSRFToken": CSRF},
+      body: JSON.stringify(payload),
+    });
+    const wp = await res.json();
+    updateWaypointInList(wp);
+  } else {
+    const res = await fetch(`/routes/${ROUTE_PK}/waypoints/add/`, {
+      method: "POST",
+      headers: {"Content-Type": "application/json", "X-CSRFToken": CSRF},
+      body: JSON.stringify(payload),
+    });
+    const wp = await res.json();
+    addWaypointToList(wp);
+    const order = document.querySelectorAll("#waypoint-list .waypoint-item").length;
+    markers[wp.id] = L.marker([wp.lat, wp.lng], {icon: numberIcon(order)}).addTo(map)
+      .bindPopup(wp.label || `Waypoint ${order}`);
+  }
+  wpModal.hide();
+});
+
+// --- List helpers ---
+function typeLabel(wp) {
+  if (wp.advance_type === "question") return "?";
+  if (wp.advance_type === "proximity") return `~${wp.proximity_meters}m`;
+  return "btn";
+}
+
+function makeLi(wp, order) {
+  const li = document.createElement("li");
+  li.className = "list-group-item waypoint-item d-flex justify-content-between align-items-center gap-2";
+  li.dataset.id = wp.id;
+  li.dataset.lat = wp.lat;
+  li.dataset.lng = wp.lng;
+  li.dataset.label = wp.label;
+  li.dataset.advanceType = wp.advance_type;
+  li.dataset.buttonText = wp.button_text;
+  li.dataset.buttonCaption = wp.button_caption;
+  li.dataset.question = wp.question;
+  li.dataset.answer = wp.answer;
+  li.dataset.proximity = wp.proximity_meters;
+  li.innerHTML = `
+    <span class="d-flex align-items-center gap-2 flex-grow-1 overflow-hidden">
+      <span class="badge bg-secondary flex-shrink-0">${order}</span>
+      <span class="badge badge-${wp.advance_type} text-white flex-shrink-0">${typeLabel(wp)}</span>
+      <span class="text-truncate small">${wp.label || wp.lat.toFixed(5)}</span>
+    </span>
+    <div class="d-flex gap-1 flex-shrink-0">
+      <button class="btn btn-sm btn-outline-primary btn-edit" data-id="${wp.id}">&#9998;</button>
+      <button class="btn btn-sm btn-outline-danger btn-delete" data-id="${wp.id}">&times;</button>
+    </div>`;
+  return li;
+}
+
+function addWaypointToList(wp) {
+  const emptyMsg = document.getElementById("empty-msg");
+  if (emptyMsg) emptyMsg.remove();
+  const list = document.getElementById("waypoint-list");
+  const order = list.querySelectorAll(".waypoint-item").length + 1;
+  list.appendChild(makeLi(wp, order));
+  updateCount();
+}
+
+function updateWaypointInList(wp) {
+  const existing = document.querySelector(`#waypoint-list [data-id="${wp.id}"]`);
+  if (!existing) return;
+  const badge = existing.querySelector(".badge.bg-secondary");
+  const order = badge ? badge.textContent : "?";
+  const newLi = makeLi(wp, order);
+  existing.replaceWith(newLi);
+}
+
+document.getElementById("waypoint-list").addEventListener("click", async (e) => {
+  const delBtn = e.target.closest(".btn-delete");
+  if (delBtn) {
+    const id = delBtn.dataset.id;
+    await fetch(`/waypoints/${id}/delete/`, {method:"POST", headers:{"X-CSRFToken":CSRF}});
+    document.querySelector(`#waypoint-list [data-id="${id}"]`).remove();
+    if (markers[id]) { map.removeLayer(markers[id]); delete markers[id]; }
+    renumberList();
+    updateCount();
+    return;
+  }
+  const editBtn = e.target.closest(".btn-edit");
+  if (editBtn) {
+    const li = document.querySelector(`#waypoint-list [data-id="${editBtn.dataset.id}"]`);
+    openModal(
+      li.dataset.id,
+      parseFloat(li.dataset.lat),
+      parseFloat(li.dataset.lng),
+      li.dataset.label,
+      li.dataset.advanceType,
+      li.dataset.buttonText,
+      li.dataset.buttonCaption,
+      li.dataset.question,
+      li.dataset.answer,
+      parseInt(li.dataset.proximity),
+    );
+  }
+});
+
+function renumberList() {
+  document.querySelectorAll("#waypoint-list .waypoint-item").forEach((li, i) => {
+    li.querySelector(".badge.bg-secondary").textContent = i + 1;
+  });
+}
+
+function updateCount() {
+  const n = document.querySelectorAll("#waypoint-list .waypoint-item").length;
+  document.getElementById("wp-count").textContent = `(${n})`;
+}
+
+// --- Drag to reorder ---
+Sortable.create(document.getElementById("waypoint-list"), {
+  animation: 150,
+  onEnd: async () => {
+    const ids = [...document.querySelectorAll("#waypoint-list .waypoint-item")].map(li => li.dataset.id);
+    renumberList();
+    await fetch(`/routes/${ROUTE_PK}/waypoints/reorder/`, {
+      method:"POST",
+      headers:{"Content-Type":"application/json","X-CSRFToken":CSRF},
+      body: JSON.stringify(ids),
+    });
+  },
+});
+</script>
+{% endblock %}
