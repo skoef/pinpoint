@@ -1,5 +1,5 @@
-<!doctype html>
-<html lang="en">
+{% load i18n %}<!doctype html>
+<html lang="{{ LANGUAGE_CODE }}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -12,7 +12,7 @@
 <body>
   <div class="text-center px-3">
     <h1 class="h4">{{ route.name }}</h1>
-    <p class="text-muted">This route has no waypoints yet.</p>
+    <p class="text-muted">{% trans "This route has no waypoints yet." %}</p>
   </div>
 </body>
 </html>

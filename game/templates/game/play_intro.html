@@ -1,5 +1,5 @@
-<!doctype html>
-<html lang="en">
+{% load i18n %}<!doctype html>
+<html lang="{{ LANGUAGE_CODE }}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -16,7 +16,7 @@
 <body>
   <div class="intro-card text-center px-4">
     <h1 class="h4 mb-1">{{ route.name }}</h1>
-    <p class="text-muted mb-4">{{ total }} waypoint{{ total|pluralize }}</p>
+    <p class="text-muted mb-4">{% blocktrans count count=total %}{{ count }} waypoint{% plural %}{{ count }} waypoints{% endblocktrans %}</p>
 
     {% if route.description %}
     <p class="mb-4" style="color:#c9d1d9">{{ route.description }}</p>
@@ -25,25 +25,25 @@
     <div class="text-start mb-4">
       <div class="step">
         <div class="step-num">1</div>
-        <div class="step-text">Allow your browser to access your location when prompted.</div>
+        <div class="step-text">{% trans "Allow your browser to access your location when prompted." %}</div>
       </div>
       <div class="step">
         <div class="step-num">2</div>
-        <div class="step-text">The app shows how many <strong>meters</strong> you are from the next hidden location — navigate towards it.</div>
+        <div class="step-text">{% blocktrans %}The app shows how many <strong>meters</strong> you are from the next hidden location — navigate towards it.{% endblocktrans %}</div>
       </div>
       <div class="step">
         <div class="step-num">3</div>
-        <div class="step-text">Once you arrive, follow the instructions to unlock the next waypoint.</div>
+        <div class="step-text">{% trans "Once you arrive, follow the instructions to unlock the next waypoint." %}</div>
       </div>
       <div class="step">
         <div class="step-num">4</div>
-        <div class="step-text">Find all {{ total }} waypoint{{ total|pluralize }} to complete the route!</div>
+        <div class="step-text">{% blocktrans count count=total %}Find the 1 waypoint to complete the route!{% plural %}Find all {{ count }} waypoints to complete the route!{% endblocktrans %}</div>
       </div>
     </div>
 
     <form method="post" action="{% url 'play_start' token %}">
       {% csrf_token %}
-      <button type="submit" class="btn btn-primary btn-lg w-100">Start</button>
+      <button type="submit" class="btn btn-primary btn-lg w-100">{% trans "Start" %}</button>
     </form>
   </div>
 </body>

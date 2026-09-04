@@ -1,5 +1,5 @@
-<!doctype html>
-<html lang="en">
+{% load i18n %}<!doctype html>
+<html lang="{{ LANGUAGE_CODE }}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -17,13 +17,13 @@
 <body>
   <div class="text-center px-3" style="max-width:420px;width:100%">
     <h1 class="h5 mb-1">{{ route.name }}</h1>
-    <p class="progress-label mb-4">Waypoint {{ current_index|add:1 }} of {{ total }}</p>
+    <p class="progress-label mb-4">{% blocktrans with num=current_number total=total %}Waypoint {{ num }} of {{ total }}{% endblocktrans %}</p>
 
     <div class="mb-2">
       <span class="distance-display" id="distance">—</span>
       <span class="unit"> m</span>
     </div>
-    <p id="status-msg">Waiting for location…</p>
+    <p id="status-msg">{% trans "Waiting for location…" %}</p>
 
     <div id="advance-ui" style="display:none">
       {% if current.advance_type == 'button' %}
@@ -35,7 +35,7 @@
         <form method="post" action="{% url 'play_advance' token %}" class="mt-3">
           {% csrf_token %}
           <button type="submit" class="btn btn-primary btn-lg w-100">
-            {% if current.button_caption %}{{ current.button_caption }}{% elif current_index|add:1 == total %}Finish{% else %}Next waypoint{% endif %}
+            {% if current.button_caption %}{{ current.button_caption }}{% elif current_number == total %}{% trans "Finish" %}{% else %}{% trans "Next waypoint" %}{% endif %}
           </button>
         </form>
 
@@ -46,18 +46,18 @@
           <form method="post" action="{% url 'play_advance' token %}">
             {% csrf_token %}
             <input type="text" name="answer" class="form-control mb-2 {% if answer_error %}is-invalid{% endif %}"
-                   placeholder="Your answer…" autocomplete="off">
+                   placeholder="{% trans 'Your answer…' %}" autocomplete="off">
             {% if answer_error %}
-            <div class="invalid-feedback d-block mb-2">That's not correct, try again.</div>
+            <div class="invalid-feedback d-block mb-2">{% trans "That's not correct, try again." %}</div>
             {% endif %}
-            <button type="submit" class="btn btn-primary w-100">Submit</button>
+            <button type="submit" class="btn btn-primary w-100">{% trans "Submit" %}</button>
           </form>
         </div>
         {% else %}
         <form method="post" action="{% url 'play_advance' token %}" class="mt-4">
           {% csrf_token %}
           <button type="submit" class="btn btn-primary btn-lg w-100">
-            {% if current_index|add:1 == total %}Finish{% else %}Next waypoint{% endif %}
+            {% if current_number == total %}{% trans "Finish" %}{% else %}{% trans "Next waypoint" %}{% endif %}
           </button>
         </form>
         {% endif %}
@@ -67,7 +67,7 @@
           <div class="progress mb-2" style="height:8px;background:#21262d;">
             <div class="progress-bar bg-success" id="proximity-bar" style="width:0%"></div>
           </div>
-          <p class="progress-label" id="proximity-label">Get within {{ current.proximity_meters }} m to continue</p>
+          <p class="progress-label" id="proximity-label">{% blocktrans with meters=current.proximity_meters %}Get within {{ meters }} m to continue{% endblocktrans %}</p>
         </div>
       {% endif %}
     </div>
@@ -81,7 +81,24 @@
     const ANSWER_ERROR = {{ answer_error|yesno:"true,false" }};
     let advanced = false;
 
-    // If returning after a wrong answer, the player already had location — show UI immediately.
+    // i18n strings for JS
+    {% trans "Accuracy: ±{accuracy} m" as str_accuracy %}
+    {% trans "Could not detect your location. Make sure location access is enabled in your browser and device settings." as str_loc_failed %}
+    {% trans "Location access denied. Enable it in your browser settings and reload." as str_loc_denied %}
+    {% trans "Geolocation is not supported by this browser." as str_no_geo %}
+    {% trans "Close enough — advancing…" as str_close_enough %}
+    {% trans "Get within {meters} m to continue ({distance} m away)" as str_get_within_away %}
+    {% trans "Get within {meters} m to continue" as str_get_within %}
+    const I18N = {
+      accuracy:      "{{ str_accuracy|escapejs }}",
+      locationFailed:"{{ str_loc_failed|escapejs }}",
+      locationDenied:"{{ str_loc_denied|escapejs }}",
+      noGeo:         "{{ str_no_geo|escapejs }}",
+      closeEnough:   "{{ str_close_enough|escapejs }}",
+      getWithinAway: "{{ str_get_within_away|escapejs }}",
+      getWithin:     "{{ str_get_within|escapejs }}",
+    };
+
     if (ANSWER_ERROR) document.getElementById("advance-ui").style.display = "block";
 
     function haversineMeters(lat1, lon1, lat2, lon2) {
@@ -105,7 +122,7 @@
     function update(pos) {
       const d = haversineMeters(pos.coords.latitude, pos.coords.longitude, TARGET_LAT, TARGET_LNG);
       document.getElementById("distance").textContent = Math.round(d);
-      setStatus(`Accuracy: ±${Math.round(pos.coords.accuracy)} m`, false);
+      setStatus(I18N.accuracy.replace("{accuracy}", Math.round(pos.coords.accuracy)), false);
       revealAdvanceUI();
 
       if (ADVANCE_TYPE === "proximity") {
@@ -113,13 +130,15 @@
         document.getElementById("proximity-bar").style.width = pct + "%";
         const label = document.getElementById("proximity-label");
         if (d <= PROXIMITY_M) {
-          label.textContent = "Close enough — advancing…";
+          label.textContent = I18N.closeEnough;
           if (!advanced) {
             advanced = true;
             document.getElementById("auto-advance-form").submit();
           }
         } else {
-          label.textContent = `Get within ${PROXIMITY_M} m to continue (${Math.round(d)} m away)`;
+          label.textContent = I18N.getWithinAway
+            .replace("{meters}", PROXIMITY_M)
+            .replace("{distance}", Math.round(d));
         }
       }
     }
@@ -127,26 +146,19 @@
     if (navigator.geolocation) {
       let gotPosition = false;
       const timeoutId = setTimeout(() => {
-        if (!gotPosition) {
-          setStatus("Could not detect your location. Make sure location access is enabled in your browser and device settings.", true);
-        }
+        if (!gotPosition) setStatus(I18N.locationFailed, true);
       }, 8000);
 
       navigator.geolocation.watchPosition(
         (pos) => { gotPosition = true; clearTimeout(timeoutId); update(pos); },
         (err) => {
           clearTimeout(timeoutId);
-          setStatus(
-            err.code === 1
-              ? "Location access denied. Enable it in your browser settings and reload."
-              : "Could not detect your location. Make sure location access is enabled.",
-            true
-          );
+          setStatus(err.code === 1 ? I18N.locationDenied : I18N.locationFailed, true);
         },
         {enableHighAccuracy: true, maximumAge: 5000}
       );
     } else {
-      setStatus("Geolocation is not supported by this browser.", true);
+      setStatus(I18N.noGeo, true);
     }
   </script>
 

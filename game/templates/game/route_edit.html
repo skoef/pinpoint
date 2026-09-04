@@ -1,5 +1,6 @@
 {% extends "game/base.html" %}
-{% block title %}{{ route.name }} — Edit{% endblock %}
+{% load i18n %}
+{% block title %}{{ route.name }} — {% trans "Edit" %}{% endblock %}
 
 {% block extra_css %}
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
@@ -18,31 +19,31 @@
 <div class="d-flex justify-content-between align-items-center mb-4">
   <h1 class="h3 mb-0">{{ route.name }}</h1>
   <div class="d-flex gap-2">
-    <a href="{% url 'route_qr' route.pk %}" target="_blank" class="btn btn-sm btn-outline-dark">QR code</a>
-    <a href="{% url 'play' route.token %}" target="_blank" class="btn btn-sm btn-outline-success">Play link</a>
-    <a href="{% url 'route_list' %}" class="btn btn-sm btn-outline-secondary">Back</a>
+    <a href="{% url 'route_qr' route.pk %}" target="_blank" class="btn btn-sm btn-outline-dark">{% trans "QR code" %}</a>
+    <a href="{% url 'play' route.token %}" target="_blank" class="btn btn-sm btn-outline-success">{% trans "Play link" %}</a>
+    <a href="{% url 'route_list' %}" class="btn btn-sm btn-outline-secondary">{% trans "Back" %}</a>
   </div>
 </div>
 
 <div class="row g-4">
   <div class="col-lg-7">
-    <p class="text-muted small mb-1">Click on the map to add a waypoint.</p>
+    <p class="text-muted small mb-1">{% trans "Click on the map to add a waypoint." %}</p>
     <div id="map" class="rounded border mb-3"></div>
 
     <form method="post" class="mb-2">
       {% csrf_token %}
       <div class="mb-2">
-        <input name="name" type="text" class="form-control form-control-sm" value="{{ route.name }}" required placeholder="Route name">
+        <input name="name" type="text" class="form-control form-control-sm" value="{{ route.name }}" required placeholder="{% trans 'Route name' %}">
       </div>
       <div class="mb-2">
-        <textarea name="description" class="form-control form-control-sm" rows="2" placeholder="Description (shown to player on the intro screen)">{{ route.description }}</textarea>
+        <textarea name="description" class="form-control form-control-sm" rows="2" placeholder="{% trans 'Description (shown to player on the intro screen)' %}">{{ route.description }}</textarea>
       </div>
-      <button type="submit" class="btn btn-sm btn-outline-secondary">Save</button>
+      <button type="submit" class="btn btn-sm btn-outline-secondary">{% trans "Save" %}</button>
     </form>
   </div>
 
   <div class="col-lg-5">
-    <h2 class="h6 mb-2">Waypoints <span class="text-muted" id="wp-count">({{ waypoints|length }})</span></h2>
+    <h2 class="h6 mb-2">{% trans "Waypoints" %} <span class="text-muted" id="wp-count">({{ waypoints|length }})</span></h2>
     <ul class="list-group" id="waypoint-list">
       {% for wp in waypoints %}
       <li class="list-group-item waypoint-item d-flex justify-content-between align-items-center gap-2"
@@ -68,12 +69,12 @@
         </div>
       </li>
       {% empty %}
-      <li class="list-group-item text-muted" id="empty-msg">No waypoints yet.</li>
+      <li class="list-group-item text-muted" id="empty-msg">{% trans "No waypoints yet." %}</li>
       {% endfor %}
     </ul>
 
     <div class="mt-3 p-3 bg-light rounded border">
-      <strong>Share link:</strong><br>
+      <strong>{% trans "Share link:" %}</strong><br>
       <a href="{% url 'play' route.token %}">{{ request.scheme }}://{{ request.get_host }}{% url 'play' route.token %}</a>
     </div>
   </div>
@@ -84,7 +85,7 @@
   <div class="modal-dialog">
     <div class="modal-content">
       <div class="modal-header">
-        <h5 class="modal-title" id="modal-title">Add waypoint</h5>
+        <h5 class="modal-title" id="modal-title">{% trans "Add waypoint" %}</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
@@ -93,51 +94,51 @@
         <input type="hidden" id="modal-lng">
 
         <div class="mb-3">
-          <label class="form-label">Label <span class="text-muted">(optional)</span></label>
-          <input type="text" class="form-control" id="modal-label" placeholder="e.g. The old oak tree">
+          <label class="form-label">{% trans "Label" %} <span class="text-muted">({% trans "optional" %})</span></label>
+          <input type="text" class="form-control" id="modal-label" placeholder="{% trans 'e.g. The old oak tree' %}">
         </div>
 
         <div class="mb-3">
-          <label class="form-label">Advance type</label>
+          <label class="form-label">{% trans "Advance type" %}</label>
           <select class="form-select" id="modal-advance-type">
-            <option value="button">Button — player taps to continue</option>
-            <option value="question">Question / Riddle — player must answer correctly</option>
-            <option value="proximity">Auto-proximity — advances when close enough</option>
+            <option value="button">{% trans "Button — player taps to continue" %}</option>
+            <option value="question">{% trans "Question / Riddle — player must answer correctly" %}</option>
+            <option value="proximity">{% trans "Auto-proximity — advances when close enough" %}</option>
           </select>
         </div>
 
         <div class="conditional" id="cond-button">
           <div class="mb-3">
-            <label class="form-label">Text <span class="text-muted">(shown above the button, optional)</span></label>
-            <textarea class="form-control" id="modal-button-text" rows="3" placeholder="e.g. You found the hidden chest! Open it and note down the code inside."></textarea>
+            <label class="form-label">{% trans "Text" %} <span class="text-muted">({% trans "shown above the button, optional" %})</span></label>
+            <textarea class="form-control" id="modal-button-text" rows="3" placeholder="{% trans 'e.g. You found the hidden chest! Open it and note down the code inside.' %}"></textarea>
           </div>
           <div class="mb-3">
-            <label class="form-label">Button caption <span class="text-muted">(optional)</span></label>
-            <input type="text" class="form-control" id="modal-button-caption" placeholder="e.g. I found it!">
+            <label class="form-label">{% trans "Button caption" %} <span class="text-muted">({% trans "optional" %})</span></label>
+            <input type="text" class="form-control" id="modal-button-caption" placeholder="{% trans 'e.g. I found it!' %}">
           </div>
         </div>
 
         <div class="conditional" id="cond-question">
           <div class="mb-3">
-            <label class="form-label">Question or riddle</label>
-            <textarea class="form-control" id="modal-question" rows="3" placeholder="What year was this bridge built?"></textarea>
+            <label class="form-label">{% trans "Question or riddle" %}</label>
+            <textarea class="form-control" id="modal-question" rows="3" placeholder="{% trans 'e.g. What year was this bridge built?' %}"></textarea>
           </div>
           <div class="mb-3">
-            <label class="form-label">Correct answer <span class="text-muted">(case-insensitive)</span></label>
+            <label class="form-label">{% trans "Correct answer" %} <span class="text-muted">({% trans "case-insensitive" %})</span></label>
             <input type="text" class="form-control" id="modal-answer">
           </div>
         </div>
 
         <div class="conditional" id="cond-proximity">
           <div class="mb-3">
-            <label class="form-label">Auto-advance radius (meters)</label>
+            <label class="form-label">{% trans "Auto-advance radius (meters)" %}</label>
             <input type="number" class="form-control" id="modal-proximity" value="20" min="5" max="500">
           </div>
         </div>
       </div>
       <div class="modal-footer">
-        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-        <button type="button" class="btn btn-primary" id="modal-save">Save</button>
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{% trans "Cancel" %}</button>
+        <button type="button" class="btn btn-primary" id="modal-save">{% trans "Save" %}</button>
       </div>
     </div>
   </div>
@@ -148,8 +149,14 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
 <script>
+{% trans "Add waypoint" as str_add_wp %}
+{% trans "Edit waypoint" as str_edit_wp %}
+{% trans "Waypoint" as str_waypoint %}
 const ROUTE_PK = {{ route.pk }};
 const CSRF = "{{ csrf_token }}";
+const STR_ADD_WAYPOINT = "{{ str_add_wp|escapejs }}";
+const STR_EDIT_WAYPOINT = "{{ str_edit_wp|escapejs }}";
+const STR_WAYPOINT = "{{ str_waypoint|escapejs }}";
 const wpModal = new bootstrap.Modal(document.getElementById("wp-modal"));
 let pendingLatLng = null;
 
@@ -171,9 +178,10 @@ function numberIcon(n) {
   });
 }
 
+{% trans "Waypoint" as str_wp_default %}
 {% for wp in waypoints %}
 markers[{{ wp.pk }}] = L.marker([{{ wp.lat }}, {{ wp.lng }}], {icon: numberIcon({{ forloop.counter }})})
-  .addTo(map).bindPopup("{{ wp.label|default:'Waypoint' }} #{{ forloop.counter }}");
+  .addTo(map).bindPopup("{{ wp.label|default:str_wp_default|escapejs }} #{{ forloop.counter }}");
 {% endfor %}
 
 {% if waypoints %}
@@ -199,7 +207,7 @@ function openModal(wpId, lat, lng, label, advanceType, buttonText, buttonCaption
   document.getElementById("modal-question").value = question;
   document.getElementById("modal-answer").value = answer;
   document.getElementById("modal-proximity").value = proximity;
-  document.getElementById("modal-title").textContent = wpId ? "Edit waypoint" : "Add waypoint";
+  document.getElementById("modal-title").textContent = wpId ? STR_EDIT_WAYPOINT : STR_ADD_WAYPOINT;
   updateConditionals();
   wpModal.show();
 }
@@ -208,9 +216,9 @@ document.getElementById("modal-advance-type").addEventListener("change", updateC
 
 function updateConditionals() {
   const type = document.getElementById("modal-advance-type").value;
-  document.getElementById("cond-button").style.display   = type === "button"    ? "block" : "none";
-  document.getElementById("cond-question").style.display = type === "question"  ? "block" : "none";
-  document.getElementById("cond-proximity").style.display= type === "proximity" ? "block" : "none";
+  document.getElementById("cond-button").style.display    = type === "button"    ? "block" : "none";
+  document.getElementById("cond-question").style.display  = type === "question"  ? "block" : "none";
+  document.getElementById("cond-proximity").style.display = type === "proximity" ? "block" : "none";
 }
 
 document.getElementById("modal-save").addEventListener("click", async () => {
@@ -247,7 +255,7 @@ document.getElementById("modal-save").addEventListener("click", async () => {
     addWaypointToList(wp);
     const order = document.querySelectorAll("#waypoint-list .waypoint-item").length;
     markers[wp.id] = L.marker([wp.lat, wp.lng], {icon: numberIcon(order)}).addTo(map)
-      .bindPopup(wp.label || `Waypoint ${order}`);
+      .bindPopup(wp.label || `${STR_WAYPOINT} ${order}`);
   }
   wpModal.hide();
 });

@@ -1,2 +1,3 @@
 db.sqlite3
 .venv
+locale/en/LC_MESSAGES/django.mo locale/nl/LC_MESSAGES/django.mo
