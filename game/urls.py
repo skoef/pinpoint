@@ -13,6 +13,9 @@ urlpatterns = [
     path("routes/<int:pk>/qr.png", views.route_qr, name="route_qr"),
     path("waypoints/<int:pk>/delete/", views.waypoint_delete, name="waypoint_delete"),
     path("waypoints/<int:pk>/update/", views.waypoint_update, name="waypoint_update"),
+    # Health checks
+    path("livez", views.livez, name="livez"),
+    path("readyz", views.readyz, name="readyz"),
     # Player
     path("play/<uuid:token>/", views.play_intro, name="play"),
     path("play/<uuid:token>/start/", views.play_start, name="play_start"),

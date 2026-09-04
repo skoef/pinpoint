@@ -46,6 +46,22 @@ def post_form(client, url, data, files=None):
 
 
 # ---------------------------------------------------------------------------
+# Health checks
+# ---------------------------------------------------------------------------
+
+class HealthCheckTest(TestCase):
+    def test_livez_returns_200(self):
+        response = self.client.get(reverse("livez"))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"status": "ok"})
+
+    def test_readyz_returns_200_when_db_available(self):
+        response = self.client.get(reverse("readyz"))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"status": "ok"})
+
+
+# ---------------------------------------------------------------------------
 # Model tests
 # ---------------------------------------------------------------------------
 

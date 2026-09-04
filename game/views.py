@@ -3,11 +3,28 @@ import json
 
 import qrcode
 from django.contrib.auth.decorators import login_required
+from django.db import OperationalError, connection
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
 from .models import Route, Waypoint
+
+
+# ---------------------------------------------------------------------------
+# Health checks
+# ---------------------------------------------------------------------------
+
+def livez(request):
+    return JsonResponse({"status": "ok"})
+
+
+def readyz(request):
+    try:
+        connection.ensure_connection()
+    except OperationalError:
+        return JsonResponse({"status": "unavailable"}, status=503)
+    return JsonResponse({"status": "ok"})
 
 
 # ---------------------------------------------------------------------------
