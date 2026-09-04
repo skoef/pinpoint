@@ -194,7 +194,7 @@ function numberIcon(n) {
 {% trans "Waypoint" as str_wp_default %}
 {% for wp in waypoints %}
 markers[{{ wp.pk }}] = L.marker([{{ wp.lat }}, {{ wp.lng }}], {icon: numberIcon({{ forloop.counter }})})
-  .addTo(map).bindPopup("{{ wp.label|default:str_wp_default|escapejs }} #{{ forloop.counter }}");
+  .addTo(map).bindPopup("{% if wp.label %}{{ wp.label|escapejs }}{% else %}{{ str_wp_default|escapejs }} #{{ forloop.counter }}{% endif %}");
 {% endfor %}
 
 {% if waypoints %}
