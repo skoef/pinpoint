@@ -4,7 +4,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: pinpoint\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-09-07 08:50+0000\n"
+"POT-Creation-Date: 2026-09-07 09:15+0000\n"
 "PO-Revision-Date: 2026-09-03 12:13+0000\n"
 "Language-Team: English\n"
 "Language: en\n"
@@ -69,12 +69,54 @@ msgstr "Password"
 msgid "Log in"
 msgstr "Log in"
 
-#: game/templates/game/play.html:45
+#: game/templates/game/play.html:28
+msgid "Tap to enable sound"
+msgstr "Tap to enable sound"
+
+#: game/templates/game/play.html:30
+msgid "Sound and vibration"
+msgstr "Sound and vibration"
+
+#: game/templates/game/play.html:37 game/templates/game/route_list.html:24
+#, python-format
+msgid "%(count)s waypoint"
+msgid_plural "%(count)s waypoints"
+msgstr[0] "%(count)s waypoint"
+msgstr[1] "%(count)s waypoints"
+
+#: game/templates/game/play.html:46
+msgid "Allow your browser to access your location when prompted."
+msgstr "Allow your browser to access your location when prompted."
+
+#: game/templates/game/play.html:50
+msgid ""
+"The app shows how many <strong>meters</strong> you are from the next hidden "
+"location — navigate towards it."
+msgstr ""
+"The app shows how many <strong>meters</strong> you are from the next hidden "
+"location — navigate towards it."
+
+#: game/templates/game/play.html:54
+msgid "Once you arrive, follow the instructions to unlock the next waypoint."
+msgstr "Once you arrive, follow the instructions to unlock the next waypoint."
+
+#: game/templates/game/play.html:58
+#, python-format
+msgid "Find the 1 waypoint to complete the route!"
+msgid_plural "Find all %(count)s waypoints to complete the route!"
+msgstr[0] "Find the 1 waypoint to complete the route!"
+msgstr[1] "Find all %(count)s waypoints to complete the route!"
+
+#: game/templates/game/play.html:64
+msgid "Start"
+msgstr "Start"
+
+#: game/templates/game/play.html:97
 #, python-brace-format
 msgid "Accuracy: ±{accuracy} m"
 msgstr "Accuracy: ±{accuracy} m"
 
-#: game/templates/game/play.html:46
+#: game/templates/game/play.html:98
 msgid ""
 "Could not detect your location. Make sure location access is enabled in your "
 "browser and device settings."
@@ -82,29 +124,29 @@ msgstr ""
 "Could not detect your location. Make sure location access is enabled in your "
 "browser and device settings."
 
-#: game/templates/game/play.html:47
+#: game/templates/game/play.html:99
 msgid "Location access denied. Enable it in your browser settings and reload."
 msgstr "Location access denied. Enable it in your browser settings and reload."
 
-#: game/templates/game/play.html:48
+#: game/templates/game/play.html:100
 msgid "Geolocation is not supported by this browser."
 msgstr "Geolocation is not supported by this browser."
 
-#: game/templates/game/play.html:49
+#: game/templates/game/play.html:101
 msgid "Close enough — advancing…"
 msgstr "Close enough — advancing…"
 
-#: game/templates/game/play.html:50
+#: game/templates/game/play.html:102
 #, python-brace-format
 msgid "Get within {meters} m to continue ({distance} m away)"
 msgstr "Get within {meters} m to continue ({distance} m away)"
 
-#: game/templates/game/play.html:51
+#: game/templates/game/play.html:103
 #, python-brace-format
 msgid "Get within {meters} m to continue"
 msgstr "Get within {meters} m to continue"
 
-#: game/templates/game/play.html:52
+#: game/templates/game/play.html:104
 msgid "Improving accuracy…"
 msgstr "Improving accuracy…"
 
@@ -119,41 +161,6 @@ msgstr "Finished!"
 #: game/templates/game/play_finished.html:15
 msgid "You finished!"
 msgstr "You finished!"
-
-#: game/templates/game/play_intro.html:19
-#: game/templates/game/route_list.html:24
-#, python-format
-msgid "%(count)s waypoint"
-msgid_plural "%(count)s waypoints"
-msgstr[0] "%(count)s waypoint"
-msgstr[1] "%(count)s waypoints"
-
-#: game/templates/game/play_intro.html:28
-msgid "Allow your browser to access your location when prompted."
-msgstr "Allow your browser to access your location when prompted."
-
-#: game/templates/game/play_intro.html:32
-msgid ""
-"The app shows how many <strong>meters</strong> you are from the next hidden "
-"location — navigate towards it."
-msgstr ""
-"The app shows how many <strong>meters</strong> you are from the next hidden "
-"location — navigate towards it."
-
-#: game/templates/game/play_intro.html:36
-msgid "Once you arrive, follow the instructions to unlock the next waypoint."
-msgstr "Once you arrive, follow the instructions to unlock the next waypoint."
-
-#: game/templates/game/play_intro.html:40
-#, python-format
-msgid "Find the 1 waypoint to complete the route!"
-msgid_plural "Find all %(count)s waypoints to complete the route!"
-msgstr[0] "Find the 1 waypoint to complete the route!"
-msgstr[1] "Find all %(count)s waypoints to complete the route!"
-
-#: game/templates/game/play_intro.html:46
-msgid "Start"
-msgstr "Start"
 
 #: game/templates/game/play_unavailable.html:15
 msgid "This route is currently unavailable."

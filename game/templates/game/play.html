@@ -13,25 +13,79 @@
     #status-msg { min-height:1.5rem; color:#8b949e; font-size:0.85rem; }
     #proximity-bar { transition: width 0.5s; }
     #waypoint-panel.busy { opacity:.5; pointer-events:none; }
+    #alert-bar { position:fixed; top:8px; right:8px; display:flex; align-items:center; gap:6px; }
+    #alert-bar button { background:none; border:none; font-size:1.4rem; line-height:1; padding:8px; cursor:pointer; opacity:.75; }
+    #sound-hint { color:#8b949e; font-size:0.75rem; }
+    .intro-card { background:#161b22; border:1px solid #30363d; border-radius:12px; padding:2rem; max-width:400px; width:100%; }
+    .step { display:flex; gap:0.75rem; align-items:flex-start; margin-bottom:1rem; }
+    .step-num { background:#0d6efd; color:#fff; border-radius:50%; width:28px; height:28px; min-width:28px; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:0.85rem; margin-top:2px; }
+    .step-text { color:#c9d1d9; font-size:0.95rem; line-height:1.5; }
   </style>
 </head>
 <body>
-  <div class="text-center px-3" style="max-width:420px;width:100%">
+  {# Outside #waypoint-panel so it survives the fragment swaps. #}
+  <div id="alert-bar">
+    <span id="sound-hint">{% trans "Tap to enable sound" %}</span>
+    <button type="button" id="alert-toggle" aria-pressed="true"
+            title="{% trans 'Sound and vibration' %}" aria-label="{% trans 'Sound and vibration' %}">🔔</button>
+  </div>
+
+  {% comment %}
+  The intro and the game are one document, so the Start tap counts as the
+  gesture that lets the browser play audio for the rest of the route.
+  {% endcomment %}
+  <div id="intro-card" class="intro-card text-center px-4"{% if started %} style="display:none"{% endif %}>
+    <h1 class="h4 mb-1">{{ route.name }}</h1>
+    <p class="text-muted mb-4">{% blocktrans count count=total %}{{ count }} waypoint{% plural %}{{ count }} waypoints{% endblocktrans %}</p>
+
+    {% if route.description %}
+    <p class="mb-4" style="color:#c9d1d9">{{ route.description }}</p>
+    {% endif %}
+
+    <div class="text-start mb-4">
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-text">{% trans "Allow your browser to access your location when prompted." %}</div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-text">{% blocktrans %}The app shows how many <strong>meters</strong> you are from the next hidden location — navigate towards it.{% endblocktrans %}</div>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-text">{% trans "Once you arrive, follow the instructions to unlock the next waypoint." %}</div>
+      </div>
+      <div class="step">
+        <div class="step-num">4</div>
+        <div class="step-text">{% blocktrans count count=total %}Find the 1 waypoint to complete the route!{% plural %}Find all {{ count }} waypoints to complete the route!{% endblocktrans %}</div>
+      </div>
+    </div>
+
+    <form id="start-form" method="post" action="{% url 'play_start' token %}">
+      {% csrf_token %}
+      <button type="submit" class="btn btn-primary btn-lg w-100">{% trans "Start" %}</button>
+    </form>
+  </div>
+
+  <div id="play-screen" class="text-center px-3"
+       style="max-width:420px;width:100%{% if not started %};display:none{% endif %}">
     <h1 class="h5 mb-1">{{ route.name }}</h1>
     <div id="waypoint-panel">
-      {% include "game/_play_waypoint.html" %}
+      {% if started %}{% include "game/_play_waypoint.html" %}{% endif %}
     </div>
   </div>
 
   <script>
-    // Mutable: these are re-pointed at the next waypoint after each advance,
-    // which happens in place so the geolocation watch is never torn down.
-    let TARGET_LAT = {{ current.lat }};
-    let TARGET_LNG = {{ current.lng }};
-    let ADVANCE_TYPE = "{{ current.advance_type }}";
-    let PROXIMITY_M = {{ current.proximity_meters }};
+    // Mutable: re-pointed at the next waypoint after each advance, which happens
+    // in place so the geolocation watch and the audio context both survive.
+    let started = {{ started|yesno:"true,false" }};
+    let TARGET_LAT = {% if started %}{{ current.lat }}{% else %}null{% endif %};
+    let TARGET_LNG = {% if started %}{{ current.lng }}{% else %}null{% endif %};
+    let ADVANCE_TYPE = {% if started %}"{{ current.advance_type }}"{% else %}null{% endif %};
+    let PROXIMITY_M = {% if started %}{{ current.proximity_meters }}{% else %}0{% endif %};
 
     const ANSWER_ERROR = {{ answer_error|yesno:"true,false" }};
+    const START_URL = "{% url 'play_start' token %}";
     const ADVANCE_URL = "{% url 'play_advance' token %}";
     const PLAY_URL = "{% url 'play_game' token %}";
     const CSRF = "{{ csrf_token }}";
@@ -39,7 +93,7 @@
 
     let advanced = false;
     let arrived = ANSWER_ERROR;  // already arrived if re-showing after a wrong answer
-    let advancing = false;
+    let busy = false;
 
     // i18n strings for JS
     {% trans "Accuracy: ±{accuracy} m" as str_accuracy %}
@@ -71,11 +125,22 @@
       return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     }
 
+    // While the intro is showing there is no status element yet, so hold the
+    // message (a denied-permission error, typically) until the panel exists.
+    let pendingStatus = null;
+
     function setStatus(msg, isError) {
       const el = document.getElementById("status-msg");
-      if (!el) return;
+      if (!el) { pendingStatus = [msg, isError]; return; }
       el.textContent = msg;
       el.style.color = isError ? "#f85149" : "#8b949e";
+    }
+
+    function applyPendingStatus() {
+      if (!pendingStatus) return;
+      const [msg, isError] = pendingStatus;
+      pendingStatus = null;
+      setStatus(msg, isError);
     }
 
     function revealAdvanceUI() {
@@ -83,21 +148,140 @@
       if (el) el.style.display = "block";
     }
 
-    // --- Advancing without a page reload -----------------------------------
+    // --- Arrival feedback: chime + vibration --------------------------------
+    // The chime is synthesised with the Web Audio API, so there is no audio file
+    // to ship or fetch. Browsers keep audio suspended until the player interacts
+    // with the page; the Start tap below is that interaction, and because the
+    // whole route lives in this one document it covers every waypoint.
+    const ALERTS_KEY = "pinpoint_alerts";
+    const toggle = document.getElementById("alert-toggle");
+    const soundHint = document.getElementById("sound-hint");
+    let audioCtx = null;
+
+    function alertsOn() {
+      return localStorage.getItem(ALERTS_KEY) !== "off";  // on unless opted out
+    }
+
+    function audioReady() {
+      return !!audioCtx && audioCtx.state === "running";
+    }
+
+    function renderAlertBar() {
+      const on = alertsOn();
+      toggle.textContent = on ? "🔔" : "🔇";
+      toggle.setAttribute("aria-pressed", on ? "true" : "false");
+      // The hint only matters while sound is wanted but still browser-locked.
+      soundHint.style.display = (on && !audioReady()) ? "inline" : "none";
+    }
+
+    async function unlockAudio() {
+      if (audioReady()) return;
+      if (!audioCtx) {
+        const Ctx = window.AudioContext || window.webkitAudioContext;
+        if (!Ctx) return;
+        audioCtx = new Ctx();
+      }
+      // resume() must be kicked off inside the gesture handler.
+      if (audioCtx.state === "suspended") {
+        try { await audioCtx.resume(); } catch (err) { /* browser refused */ }
+      }
+      renderAlertBar();
+    }
+
+    // Not {once:true}: resume() can be refused, so keep trying on each gesture.
+    document.addEventListener("touchstart", unlockAudio, {passive: true});
+    document.addEventListener("click", unlockAudio);
+    document.addEventListener("keydown", unlockAudio);
+
+    function playChime() {
+      if (!alertsOn() || !audioReady()) return;
+      const now = audioCtx.currentTime;
+      // Two rising notes — a short, friendly "you made it" motif.
+      [[880, 0], [1320, 0.15]].forEach(([freq, offset]) => {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = "sine";
+        osc.frequency.value = freq;
+        gain.gain.setValueAtTime(0, now + offset);
+        gain.gain.linearRampToValueAtTime(0.35, now + offset + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + offset + 0.38);
+        osc.connect(gain).connect(audioCtx.destination);
+        osc.start(now + offset);
+        osc.stop(now + offset + 0.4);
+      });
+    }
+
+    function vibrate() {
+      // navigator.vibrate is not implemented in iOS Safari; Android only.
+      if (alertsOn() && navigator.vibrate) navigator.vibrate([120, 70, 120]);
+    }
+
+    function notifyArrival() {
+      playChime();
+      vibrate();
+    }
+
+    toggle.addEventListener("click", async () => {
+      localStorage.setItem(ALERTS_KEY, alertsOn() ? "off" : "on");
+      renderAlertBar();
+      if (!alertsOn()) return;
+      // This tap is itself a valid gesture, so unlock before previewing.
+      await unlockAudio();
+      notifyArrival();  // preview, so the player knows it works
+    });
+
+    renderAlertBar();
+
+    // --- Moving between waypoints without a page reload ---------------------
     // The server stays authoritative for progress; it answers with a rendered
     // fragment for the next waypoint, which we swap into the panel.
+    function applyTarget(wp) {
+      TARGET_LAT = wp.lat;
+      TARGET_LNG = wp.lng;
+      ADVANCE_TYPE = wp.advance_type;
+      PROXIMITY_M = wp.proximity_meters;
+      arrived = false;
+      advanced = false;
+    }
+
+    async function post(url, formData) {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: {"X-Requested-With": "XMLHttpRequest", "X-CSRFToken": CSRF},
+        body: formData,
+      });
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      return res.json();
+    }
+
+    async function startRoute(formData) {
+      if (busy) return;
+      busy = true;
+      try {
+        const data = await post(START_URL, formData);
+        if (data.status !== "advanced") {   // empty route, etc.
+          window.location.href = PLAY_URL;
+          return;
+        }
+        panel.innerHTML = data.html;
+        applyTarget(data.waypoint);
+        started = true;
+        document.getElementById("intro-card").style.display = "none";
+        document.getElementById("play-screen").style.display = "";
+        applyPendingStatus();
+      } catch (err) {
+        window.location.href = PLAY_URL;  // never leave the player stuck
+      } finally {
+        busy = false;
+      }
+    }
+
     async function advance(formData) {
-      if (advancing) return;
-      advancing = true;
+      if (busy) return;
+      busy = true;
       panel.classList.add("busy");
       try {
-        const res = await fetch(ADVANCE_URL, {
-          method: "POST",
-          headers: {"X-Requested-With": "XMLHttpRequest", "X-CSRFToken": CSRF},
-          body: formData,
-        });
-        if (!res.ok) throw new Error("HTTP " + res.status);
-        const data = await res.json();
+        const data = await post(ADVANCE_URL, formData);
 
         if (data.status === "finished") {
           window.location.href = PLAY_URL;  // one reload, only at the very end
@@ -107,24 +291,28 @@
         panel.innerHTML = data.html;
 
         if (data.status === "advanced") {
-          TARGET_LAT = data.waypoint.lat;
-          TARGET_LNG = data.waypoint.lng;
-          ADVANCE_TYPE = data.waypoint.advance_type;
-          PROXIMITY_M = data.waypoint.proximity_meters;
-          arrived = false;
-          advanced = false;
+          applyTarget(data.waypoint);
         } else {
           // Wrong answer: still standing at the same waypoint.
           arrived = true;
           revealAdvanceUI();
         }
+        applyPendingStatus();
       } catch (err) {
-        // Never leave the player stuck — fall back to a normal page load.
-        window.location.href = PLAY_URL;
+        window.location.href = PLAY_URL;  // never leave the player stuck
       } finally {
-        advancing = false;
+        busy = false;
         panel.classList.remove("busy");
       }
+    }
+
+    const startForm = document.getElementById("start-form");
+    if (startForm) {
+      startForm.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        await unlockAudio();  // the Start tap is what unlocks audio
+        startRoute(new FormData(e.target));
+      });
     }
 
     // Delegated: the forms are replaced on every advance.
@@ -136,6 +324,7 @@
     const ACCURACY_THRESHOLD_M = 50;
 
     function update(pos) {
+      if (!started) return;  // still on the intro; the GPS is just warming up
       const acc = Math.round(pos.coords.accuracy);
       if (pos.coords.accuracy > ACCURACY_THRESHOLD_M) {
         setStatus(I18N.improving + " (±" + acc + " m)", false);
@@ -157,6 +346,7 @@
           label.textContent = I18N.closeEnough;
           if (!advanced) {
             advanced = true;
+            notifyArrival();
             const form = document.getElementById("auto-advance-form");
             if (form) advance(new FormData(form));
           }
@@ -169,10 +359,13 @@
         if (!arrived && d <= PROXIMITY_M) {
           arrived = true;
           revealAdvanceUI();
+          notifyArrival();
         }
       }
     }
 
+    // Started during the intro too, so there is already a warm fix by the time
+    // the player taps Start.
     if (navigator.geolocation) {
       let gotPosition = false;
       const timeoutId = setTimeout(() => {

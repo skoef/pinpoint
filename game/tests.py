@@ -787,6 +787,203 @@ class PlayAdvanceFragmentQuestionTest(TestCase):
         self.assertEqual(data["waypoint"]["advance_type"], Waypoint.QUESTION)
 
 
+class PlayIntroMergedTest(TestCase):
+    """Intro and game are one document, so the Start tap can unlock audio."""
+
+    def setUp(self):
+        self.route = make_route(description="Walk the woods")
+        make_waypoint(self.route, order=0, advance_type=Waypoint.BUTTON)
+        make_waypoint(self.route, order=1, advance_type=Waypoint.QUESTION,
+                      question="Q?", answer="a")
+
+    def _intro(self):
+        return self.client.get(reverse("play", args=[self.route.token])).content.decode()
+
+    def test_intro_renders_play_template(self):
+        response = self.client.get(reverse("play", args=[self.route.token]))
+        self.assertTemplateUsed(response, "game/play.html")
+
+    def test_intro_shows_instructions_and_start(self):
+        html = self._intro()
+        self.assertIn("Walk the woods", html)
+        self.assertIn('id="start-form"', html)
+        self.assertIn("Allow your browser to access your location", html)
+        self.assertIn("2 waypoints", html)
+
+    def test_intro_hides_play_screen_and_holds_no_waypoint(self):
+        html = self._intro()
+        self.assertIn('id="play-screen"', html)
+        self.assertIn("display:none", html)
+        self.assertIn("let started = false;", html)
+        self.assertIn("let TARGET_LAT = null;", html)
+
+    def test_intro_does_not_leak_the_first_waypoint(self):
+        # The panel must stay empty until Start, or the coordinates would be
+        # readable before the player has begun.
+        html = self._intro()
+        self.assertNotIn('id="advance-ui"', html)
+        self.assertNotIn("Waypoint 1 of 2", html)
+
+    def test_started_page_shows_waypoint_and_hides_intro(self):
+        html = self.client.get(reverse("play_game", args=[self.route.token])).content.decode()
+        self.assertIn("let started = true;", html)
+        self.assertIn("Waypoint 1 of 2", html)
+        self.assertIn('id="advance-ui"', html)
+
+    def test_alert_bar_present_on_intro(self):
+        # The toggle must exist before Start so the tap can unlock audio.
+        html = self._intro()
+        self.assertIn('id="alert-toggle"', html)
+        self.assertIn('id="start-form"', html)
+
+
+class TemplateLeakTest(TestCase):
+    """Django's {# #} is single-line only; a multi-line one renders literally.
+
+    Only tags that cannot occur legitimately in JS or CSS are checked --
+    {{ and }} are excluded because nested object literals and template strings
+    produce them all over the map editor.
+    """
+
+    LEAKS = ["{#", "#}", "{%", "%}"]
+
+    def _assert_clean(self, html, where):
+        for token in self.LEAKS:
+            self.assertNotIn(token, html, f"{token!r} leaked into {where}")
+
+    def setUp(self):
+        self.user = make_user("leakcheck")
+        self.route = make_route(owner=self.user, description="Desc")
+        make_waypoint(self.route, order=0, advance_type=Waypoint.QUESTION,
+                      question="Q?", answer="a")
+        make_waypoint(self.route, order=1, advance_type=Waypoint.PROXIMITY)
+
+    def _get(self, name, *args):
+        return self.client.get(reverse(name, args=args)).content.decode()
+
+    def test_intro_is_clean(self):
+        self._assert_clean(self._get("play", self.route.token), "the intro screen")
+
+    def test_play_screen_is_clean(self):
+        self._assert_clean(self._get("play_game", self.route.token), "the play screen")
+
+    def test_finished_screen_is_clean(self):
+        session = self.client.session
+        session[f"route_{self.route.pk}_waypoint"] = 2
+        session.save()
+        self._assert_clean(self._get("play_game", self.route.token), "the finished screen")
+
+    def test_fragment_is_clean(self):
+        html = self.client.post(reverse("play_advance", args=[self.route.token]),
+                                {"answer": "a"}, **AJAX).json()["html"]
+        self._assert_clean(html, "the waypoint fragment")
+
+    def test_gm_screens_are_clean(self):
+        self.client.login(username="leakcheck", password="testpass")
+        self._assert_clean(self._get("route_list"), "the route list")
+        self._assert_clean(self._get("route_edit", self.route.pk), "the route editor")
+
+
+class PlayStartFragmentTest(TestCase):
+    def setUp(self):
+        self.route = make_route()
+        self.wp1 = make_waypoint(self.route, order=0, advance_type=Waypoint.PROXIMITY,
+                                 proximity_meters=25)
+        make_waypoint(self.route, order=1, advance_type=Waypoint.BUTTON)
+
+    def _start(self):
+        return self.client.post(reverse("play_start", args=[self.route.token]), {}, **AJAX)
+
+    def test_returns_first_waypoint_fragment(self):
+        data = self._start().json()
+        self.assertEqual(data["status"], "advanced")
+        self.assertEqual(data["number"], 1)
+        self.assertEqual(data["total"], 2)
+        self.assertIn("Waypoint 1 of 2", data["html"])
+        self.assertEqual(data["waypoint"]["proximity_meters"], 25)
+        self.assertAlmostEqual(data["waypoint"]["lat"], float(self.wp1.lat), places=6)
+
+    def test_resets_progress(self):
+        session = self.client.session
+        session[f"route_{self.route.pk}_waypoint"] = 1
+        session.save()
+        self._start()
+        self.assertEqual(self.client.session[f"route_{self.route.pk}_waypoint"], 0)
+
+    def test_empty_route_reports_empty(self):
+        route = make_route(name="No waypoints")
+        response = self.client.post(reverse("play_start", args=[route.token]), {}, **AJAX)
+        self.assertEqual(response.json(), {"status": "empty"})
+
+    def test_non_ajax_start_still_redirects(self):
+        response = self.client.post(reverse("play_start", args=[self.route.token]))
+        self.assertRedirects(response, reverse("play_game", args=[self.route.token]))
+
+
+class ArrivalFeedbackTest(TestCase):
+    """Chime + vibration on arrival, wired into the in-place play screen."""
+
+    def _play_html(self, advance_type=Waypoint.BUTTON):
+        route = make_route()
+        make_waypoint(route, order=0, advance_type=advance_type)
+        return self.client.get(reverse("play_game", args=[route.token])).content.decode()
+
+    def test_alert_bar_rendered(self):
+        html = self._play_html()
+        self.assertIn('id="alert-toggle"', html)
+        self.assertIn('id="sound-hint"', html)
+        self.assertIn("Sound and vibration", html)
+        self.assertIn("Tap to enable sound", html)
+
+    def test_alert_bar_is_outside_the_swapped_panel(self):
+        # innerHTML swaps replace #waypoint-panel, so the toggle must sit outside
+        # it or it would be destroyed on the first advance.
+        html = self._play_html()
+        self.assertLess(html.index('id="alert-bar"'), html.index('id="waypoint-panel"'))
+
+    def test_alert_bar_not_in_fragment(self):
+        route = make_route()
+        make_waypoint(route, order=0, advance_type=Waypoint.BUTTON)
+        make_waypoint(route, order=1, advance_type=Waypoint.BUTTON)
+        fragment = self.client.post(reverse("play_advance", args=[route.token]),
+                                    {}, **AJAX).json()["html"]
+        self.assertNotIn("alert-toggle", fragment)
+        self.assertNotIn("alert-bar", fragment)
+
+    def test_notify_on_button_waypoint_arrival(self):
+        self.assertIn("notifyArrival();", self._play_html(Waypoint.BUTTON))
+
+    def test_notify_on_question_waypoint_arrival(self):
+        self.assertIn("notifyArrival();", self._play_html(Waypoint.QUESTION))
+
+    def test_notify_on_proximity_waypoint_arrival(self):
+        self.assertIn("notifyArrival();", self._play_html(Waypoint.PROXIMITY))
+
+    def test_proximity_advance_is_not_delayed(self):
+        # The advance is a fetch now, not a navigation, so the chime is not cut
+        # off and needs no setTimeout workaround.
+        html = self._play_html(Waypoint.PROXIMITY)
+        self.assertNotIn("setTimeout(() => document.getElementById(\"auto-advance-form\")", html)
+
+    def test_vibration_is_feature_guarded(self):
+        # navigator.vibrate is absent on iOS Safari; calling it unguarded throws.
+        self.assertIn("alertsOn() && navigator.vibrate", self._play_html())
+
+    def test_chime_needs_no_audio_asset(self):
+        html = self._play_html()
+        self.assertIn("createOscillator", html)
+        self.assertNotIn("<audio", html)
+
+    def test_no_recchime_after_wrong_answer(self):
+        route = make_route()
+        make_waypoint(route, order=0, advance_type=Waypoint.QUESTION,
+                      question="Q?", answer="a")
+        data = self.client.post(reverse("play_advance", args=[route.token]),
+                                {"answer": "wrong"}, **AJAX).json()
+        # The client keeps arrived=true for a wrong answer, so no second chime.
+        self.assertEqual(data["status"], "wrong_answer")
+
+
 class PlayWalkthroughTest(TestCase):
     """Walk a whole route through the fragment path, as the browser would."""
 

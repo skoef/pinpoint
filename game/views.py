@@ -188,14 +188,18 @@ def _wp_json(wp, request=None):
 # ---------------------------------------------------------------------------
 
 def play_intro(request, token):
+    """The intro and the game share one document, so the Start tap is a user
+    gesture the browser accepts as permission to play audio for the whole route."""
     route = get_object_or_404(Route, token=token)
     if not route.is_active:
         return render(request, "game/play_unavailable.html", {"route": route})
     waypoints = route.get_ordered_waypoints()
-    return render(request, "game/play_intro.html", {
+    return render(request, "game/play.html", {
         "route": route,
         "total": waypoints.count(),
         "token": token,
+        "started": False,
+        "answer_error": False,
     })
 
 
@@ -203,6 +207,14 @@ def play_intro(request, token):
 def play_start(request, token):
     route = get_object_or_404(Route, token=token)
     request.session[f"route_{route.pk}_waypoint"] = 0
+
+    if _wants_fragment(request):
+        waypoints = list(route.get_ordered_waypoints())
+        if not waypoints:
+            return JsonResponse({"status": "empty"})
+        context = _play_context(route, waypoints, 0, token)
+        return _fragment_response(request, context, "advanced")
+
     return redirect("play_game", token=token)
 
 
@@ -215,6 +227,7 @@ def _play_context(route, waypoints, current_index, token, answer_error=False):
         "total": len(waypoints),
         "token": token,
         "answer_error": answer_error,
+        "started": True,
     }
 
 
