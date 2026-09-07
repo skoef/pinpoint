@@ -691,6 +691,174 @@ class PlayFinishedTest(TestCase):
         self.assertNotContains(response, "pre-wrap")
 
 
+AJAX = {"HTTP_X_REQUESTED_WITH": "XMLHttpRequest"}
+
+
+class PlayAdvanceFragmentTest(TestCase):
+    """Advancing in place: play_advance answers with a rendered fragment."""
+
+    def setUp(self):
+        self.route = make_route()
+        self.wp1 = make_waypoint(self.route, order=0, advance_type=Waypoint.BUTTON,
+                                 label="First")
+        self.wp2 = make_waypoint(self.route, order=1, advance_type=Waypoint.PROXIMITY,
+                                 proximity_meters=35)
+
+    def _advance(self, data=None):
+        return self.client.post(reverse("play_advance", args=[self.route.token]),
+                                data or {}, **AJAX)
+
+    def test_returns_json_not_redirect(self):
+        response = self._advance()
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "application/json")
+
+    def test_advances_session(self):
+        self._advance()
+        self.assertEqual(self.client.session[f"route_{self.route.pk}_waypoint"], 1)
+
+    def test_payload_describes_next_waypoint(self):
+        data = self._advance().json()
+        self.assertEqual(data["status"], "advanced")
+        self.assertEqual(data["number"], 2)
+        self.assertEqual(data["total"], 2)
+        self.assertEqual(data["waypoint"]["advance_type"], Waypoint.PROXIMITY)
+        self.assertEqual(data["waypoint"]["proximity_meters"], 35)
+        self.assertAlmostEqual(data["waypoint"]["lat"], float(self.wp2.lat), places=6)
+        self.assertAlmostEqual(data["waypoint"]["lng"], float(self.wp2.lng), places=6)
+
+    def test_fragment_html_is_for_the_next_waypoint(self):
+        html = self._advance().json()["html"]
+        self.assertIn("Waypoint 2 of 2", html)
+        self.assertIn('id="proximity-bar"', html)
+        self.assertIn('id="auto-advance-form"', html)
+
+    def test_fragment_contains_fresh_csrf_token(self):
+        html = self._advance().json()["html"]
+        self.assertIn("csrfmiddlewaretoken", html)
+
+    def test_fragment_is_not_a_full_page(self):
+        html = self._advance().json()["html"]
+        self.assertNotIn("<html", html)
+        self.assertNotIn("<script", html)
+
+    def test_last_waypoint_reports_finished(self):
+        self._advance()          # -> wp2
+        data = self._advance()   # -> past the end
+        self.assertEqual(data.json(), {"status": "finished"})
+
+    def test_advance_past_end_reports_finished(self):
+        session = self.client.session
+        session[f"route_{self.route.pk}_waypoint"] = 2
+        session.save()
+        self.assertEqual(self._advance().json(), {"status": "finished"})
+
+
+class PlayAdvanceFragmentQuestionTest(TestCase):
+    def setUp(self):
+        self.route = make_route()
+        make_waypoint(self.route, order=0, advance_type=Waypoint.QUESTION,
+                      question="Colour of the sky?", answer="Blue")
+        make_waypoint(self.route, order=1, advance_type=Waypoint.BUTTON)
+
+    def _answer(self, value):
+        return self.client.post(reverse("play_advance", args=[self.route.token]),
+                                {"answer": value}, **AJAX)
+
+    def test_correct_answer_advances(self):
+        data = self._answer("blue").json()
+        self.assertEqual(data["status"], "advanced")
+        self.assertEqual(self.client.session[f"route_{self.route.pk}_waypoint"], 1)
+
+    def test_wrong_answer_does_not_advance(self):
+        data = self._answer("red").json()
+        self.assertEqual(data["status"], "wrong_answer")
+        self.assertEqual(self.client.session.get(f"route_{self.route.pk}_waypoint", 0), 0)
+
+    def test_wrong_answer_fragment_shows_error_and_same_question(self):
+        html = self._answer("red").json()["html"]
+        self.assertIn("That's not correct, try again.", html)
+        self.assertIn("Colour of the sky?", html)
+        self.assertIn("Waypoint 1 of 2", html)
+
+    def test_wrong_answer_payload_still_targets_current_waypoint(self):
+        data = self._answer("red").json()
+        self.assertEqual(data["number"], 1)
+        self.assertEqual(data["waypoint"]["advance_type"], Waypoint.QUESTION)
+
+
+class PlayWalkthroughTest(TestCase):
+    """Walk a whole route through the fragment path, as the browser would."""
+
+    def test_three_waypoints_then_finish(self):
+        route = make_route()
+        make_waypoint(route, order=0, advance_type=Waypoint.BUTTON, label="One")
+        make_waypoint(route, order=1, advance_type=Waypoint.QUESTION,
+                      question="Q2?", answer="two")
+        make_waypoint(route, order=2, advance_type=Waypoint.PROXIMITY)
+        url = reverse("play_advance", args=[route.token])
+        session_key = f"route_{route.pk}_waypoint"
+
+        # Initial page load shows waypoint 1.
+        page = self.client.get(reverse("play_game", args=[route.token])).content.decode()
+        self.assertIn("Waypoint 1 of 3", page)
+
+        # 1 -> 2 (button)
+        data = self.client.post(url, {}, **AJAX).json()
+        self.assertEqual(data["status"], "advanced")
+        self.assertIn("Waypoint 2 of 3", data["html"])
+        self.assertIn("Q2?", data["html"])
+
+        # Wrong answer at 2 keeps us in place.
+        data = self.client.post(url, {"answer": "nope"}, **AJAX).json()
+        self.assertEqual(data["status"], "wrong_answer")
+        self.assertEqual(self.client.session[session_key], 1)
+
+        # 2 -> 3 (correct answer)
+        data = self.client.post(url, {"answer": "TWO"}, **AJAX).json()
+        self.assertEqual(data["status"], "advanced")
+        self.assertIn("Waypoint 3 of 3", data["html"])
+        self.assertEqual(data["waypoint"]["advance_type"], Waypoint.PROXIMITY)
+
+        # 3 -> finished
+        data = self.client.post(url, {}, **AJAX).json()
+        self.assertEqual(data["status"], "finished")
+        self.assertEqual(self.client.session[session_key], 3)
+
+        # The finished screen renders on the follow-up page load.
+        page = self.client.get(reverse("play_game", args=[route.token])).content.decode()
+        self.assertIn("You finished!", page)
+
+
+class PlayPanelTest(TestCase):
+    """The full page and the fragment must render the same waypoint markup."""
+
+    def test_full_page_includes_panel_and_partial(self):
+        route = make_route()
+        make_waypoint(route, order=0, advance_type=Waypoint.BUTTON)
+        html = self.client.get(reverse("play_game", args=[route.token])).content.decode()
+        self.assertIn('id="waypoint-panel"', html)
+        self.assertIn('id="advance-ui"', html)
+        self.assertIn("Waypoint 1 of 1", html)
+
+    def test_target_coords_are_mutable_bindings(self):
+        # They get re-pointed at the next waypoint after each in-place advance.
+        route = make_route()
+        make_waypoint(route, order=0)
+        html = self.client.get(reverse("play_game", args=[route.token])).content.decode()
+        self.assertIn("let TARGET_LAT", html)
+        self.assertIn("let ADVANCE_TYPE", html)
+        self.assertNotIn("const TARGET_LAT", html)
+
+    def test_non_ajax_post_still_redirects(self):
+        # No-JS fallback and the pre-refactor behaviour are preserved.
+        route = make_route()
+        make_waypoint(route, order=0, advance_type=Waypoint.BUTTON)
+        make_waypoint(route, order=1, advance_type=Waypoint.BUTTON)
+        response = self.client.post(reverse("play_advance", args=[route.token]))
+        self.assertRedirects(response, reverse("play_game", args=[route.token]))
+
+
 class PlaySessionIsolationTest(TestCase):
     def test_separate_sessions_per_route(self):
         route_a = make_route(name="A")

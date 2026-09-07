@@ -6,6 +6,7 @@ from django.contrib.auth.decorators import login_required
 from django.db import OperationalError, connection
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.template.loader import render_to_string
 from django.views.decorators.http import require_POST
 
 from .models import Route, Waypoint
@@ -205,6 +206,40 @@ def play_start(request, token):
     return redirect("play_game", token=token)
 
 
+def _play_context(route, waypoints, current_index, token, answer_error=False):
+    return {
+        "route": route,
+        "current": waypoints[current_index],
+        "current_index": current_index,
+        "current_number": current_index + 1,
+        "total": len(waypoints),
+        "token": token,
+        "answer_error": answer_error,
+    }
+
+
+def _wants_fragment(request):
+    """True when the play screen is advancing in place rather than navigating."""
+    return request.headers.get("X-Requested-With") == "XMLHttpRequest"
+
+
+def _fragment_response(request, context, status):
+    """Rendered waypoint markup plus the data the client needs to re-target."""
+    current = context["current"]
+    return JsonResponse({
+        "status": status,
+        "html": render_to_string("game/_play_waypoint.html", context, request=request),
+        "waypoint": {
+            "lat": float(current.lat),
+            "lng": float(current.lng),
+            "advance_type": current.advance_type,
+            "proximity_meters": current.proximity_meters,
+        },
+        "number": context["current_number"],
+        "total": context["total"],
+    })
+
+
 def play(request, token):
     route = get_object_or_404(Route, token=token)
     waypoints = list(route.get_ordered_waypoints())
@@ -217,16 +252,8 @@ def play(request, token):
     if current_index >= len(waypoints):
         return render(request, "game/play_finished.html", {"route": route})
 
-    current = waypoints[current_index]
-    return render(request, "game/play.html", {
-        "route": route,
-        "current": current,
-        "current_index": current_index,
-        "current_number": current_index + 1,
-        "total": len(waypoints),
-        "token": token,
-        "answer_error": False,
-    })
+    return render(request, "game/play.html",
+                  _play_context(route, waypoints, current_index, token))
 
 
 @require_POST
@@ -237,6 +264,8 @@ def play_advance(request, token):
     waypoints = list(route.get_ordered_waypoints())
 
     if current_index >= len(waypoints):
+        if _wants_fragment(request):
+            return JsonResponse({"status": "finished"})
         return redirect("play_game", token=token)
 
     current = waypoints[current_index]
@@ -245,15 +274,20 @@ def play_advance(request, token):
         user_answer = request.POST.get("answer", "").strip().lower()
         correct = current.answer.strip().lower()
         if user_answer != correct:
-            return render(request, "game/play.html", {
-                "route": route,
-                "current": current,
-                "current_index": current_index,
-                "current_number": current_index + 1,
-                "total": len(waypoints),
-                "token": token,
-                "answer_error": True,
-            })
+            context = _play_context(route, waypoints, current_index, token,
+                                    answer_error=True)
+            if _wants_fragment(request):
+                return _fragment_response(request, context, "wrong_answer")
+            return render(request, "game/play.html", context)
 
-    request.session[session_key] = current_index + 1
+    next_index = current_index + 1
+    request.session[session_key] = next_index
+
+    if _wants_fragment(request):
+        if next_index >= len(waypoints):
+            # Let the finished screen render as a normal page load.
+            return JsonResponse({"status": "finished"})
+        context = _play_context(route, waypoints, next_index, token)
+        return _fragment_response(request, context, "advanced")
+
     return redirect("play_game", token=token)

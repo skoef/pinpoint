@@ -12,80 +12,34 @@
     .progress-label { color:#8b949e; font-size:0.9rem; }
     #status-msg { min-height:1.5rem; color:#8b949e; font-size:0.85rem; }
     #proximity-bar { transition: width 0.5s; }
+    #waypoint-panel.busy { opacity:.5; pointer-events:none; }
   </style>
 </head>
 <body>
   <div class="text-center px-3" style="max-width:420px;width:100%">
     <h1 class="h5 mb-1">{{ route.name }}</h1>
-    <p class="progress-label mb-4">{% blocktrans with num=current_number total=total %}Waypoint {{ num }} of {{ total }}{% endblocktrans %}</p>
-
-    <div class="mb-2">
-      <span class="distance-display" id="distance">—</span>
-      <span class="unit"> m</span>
-    </div>
-    <p id="status-msg">{% trans "Waiting for location…" %}</p>
-
-    <div id="advance-ui" style="display:none">
-      {% if current.image %}
-      <div class="mt-4">
-        <img src="{{ current.image.url }}" alt="" class="img-fluid rounded" style="max-height:300px">
-      </div>
-      {% endif %}
-      {% if current.advance_type == 'button' %}
-        {% if current.button_text %}
-        <div class="mt-4 p-3 rounded" style="background:#161b22; text-align:left;">
-          <p class="mb-0" style="white-space:pre-wrap">{{ current.button_text }}</p>
-        </div>
-        {% endif %}
-        <form method="post" action="{% url 'play_advance' token %}" class="mt-3">
-          {% csrf_token %}
-          <button type="submit" class="btn btn-primary btn-lg w-100">
-            {% if current.button_caption %}{{ current.button_caption }}{% elif current_number == total %}{% trans "Finish" %}{% else %}{% trans "Next waypoint" %}{% endif %}
-          </button>
-        </form>
-
-      {% elif current.advance_type == 'question' %}
-        {% if current.question %}
-        <div class="mt-4 p-3 rounded" style="background:#161b22; text-align:left;">
-          <p class="mb-3" style="white-space:pre-wrap">{{ current.question }}</p>
-          <form method="post" action="{% url 'play_advance' token %}">
-            {% csrf_token %}
-            <input type="text" name="answer" class="form-control mb-2 {% if answer_error %}is-invalid{% endif %}"
-                   placeholder="{% trans 'Your answer…' %}" autocomplete="off">
-            {% if answer_error %}
-            <div class="invalid-feedback d-block mb-2">{% trans "That's not correct, try again." %}</div>
-            {% endif %}
-            <button type="submit" class="btn btn-primary w-100">{% trans "Submit" %}</button>
-          </form>
-        </div>
-        {% else %}
-        <form method="post" action="{% url 'play_advance' token %}" class="mt-4">
-          {% csrf_token %}
-          <button type="submit" class="btn btn-primary btn-lg w-100">
-            {% if current_number == total %}{% trans "Finish" %}{% else %}{% trans "Next waypoint" %}{% endif %}
-          </button>
-        </form>
-        {% endif %}
-
-      {% elif current.advance_type == 'proximity' %}
-        <div class="mt-4">
-          <div class="progress mb-2" style="height:8px;background:#21262d;">
-            <div class="progress-bar bg-success" id="proximity-bar" style="width:0%"></div>
-          </div>
-          <p class="progress-label" id="proximity-label">{% blocktrans with meters=current.proximity_meters %}Get within {{ meters }} m to continue{% endblocktrans %}</p>
-        </div>
-      {% endif %}
+    <div id="waypoint-panel">
+      {% include "game/_play_waypoint.html" %}
     </div>
   </div>
 
   <script>
-    const TARGET_LAT = {{ current.lat }};
-    const TARGET_LNG = {{ current.lng }};
-    const ADVANCE_TYPE = "{{ current.advance_type }}";
-    const PROXIMITY_M = {{ current.proximity_meters }};
+    // Mutable: these are re-pointed at the next waypoint after each advance,
+    // which happens in place so the geolocation watch is never torn down.
+    let TARGET_LAT = {{ current.lat }};
+    let TARGET_LNG = {{ current.lng }};
+    let ADVANCE_TYPE = "{{ current.advance_type }}";
+    let PROXIMITY_M = {{ current.proximity_meters }};
+
     const ANSWER_ERROR = {{ answer_error|yesno:"true,false" }};
+    const ADVANCE_URL = "{% url 'play_advance' token %}";
+    const PLAY_URL = "{% url 'play_game' token %}";
+    const CSRF = "{{ csrf_token }}";
+    const panel = document.getElementById("waypoint-panel");
+
     let advanced = false;
     let arrived = ANSWER_ERROR;  // already arrived if re-showing after a wrong answer
+    let advancing = false;
 
     // i18n strings for JS
     {% trans "Accuracy: ±{accuracy} m" as str_accuracy %}
@@ -107,7 +61,7 @@
       improving:     "{{ str_improving|escapejs }}",
     };
 
-    if (arrived) document.getElementById("advance-ui").style.display = "block";
+    if (arrived) revealAdvanceUI();
 
     function haversineMeters(lat1, lon1, lat2, lon2) {
       const R = 6371000;
@@ -119,13 +73,65 @@
 
     function setStatus(msg, isError) {
       const el = document.getElementById("status-msg");
+      if (!el) return;
       el.textContent = msg;
       el.style.color = isError ? "#f85149" : "#8b949e";
     }
 
     function revealAdvanceUI() {
-      document.getElementById("advance-ui").style.display = "block";
+      const el = document.getElementById("advance-ui");
+      if (el) el.style.display = "block";
     }
+
+    // --- Advancing without a page reload -----------------------------------
+    // The server stays authoritative for progress; it answers with a rendered
+    // fragment for the next waypoint, which we swap into the panel.
+    async function advance(formData) {
+      if (advancing) return;
+      advancing = true;
+      panel.classList.add("busy");
+      try {
+        const res = await fetch(ADVANCE_URL, {
+          method: "POST",
+          headers: {"X-Requested-With": "XMLHttpRequest", "X-CSRFToken": CSRF},
+          body: formData,
+        });
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        const data = await res.json();
+
+        if (data.status === "finished") {
+          window.location.href = PLAY_URL;  // one reload, only at the very end
+          return;
+        }
+
+        panel.innerHTML = data.html;
+
+        if (data.status === "advanced") {
+          TARGET_LAT = data.waypoint.lat;
+          TARGET_LNG = data.waypoint.lng;
+          ADVANCE_TYPE = data.waypoint.advance_type;
+          PROXIMITY_M = data.waypoint.proximity_meters;
+          arrived = false;
+          advanced = false;
+        } else {
+          // Wrong answer: still standing at the same waypoint.
+          arrived = true;
+          revealAdvanceUI();
+        }
+      } catch (err) {
+        // Never leave the player stuck — fall back to a normal page load.
+        window.location.href = PLAY_URL;
+      } finally {
+        advancing = false;
+        panel.classList.remove("busy");
+      }
+    }
+
+    // Delegated: the forms are replaced on every advance.
+    panel.addEventListener("submit", (e) => {
+      e.preventDefault();
+      advance(new FormData(e.target));
+    });
 
     const ACCURACY_THRESHOLD_M = 50;
 
@@ -136,19 +142,23 @@
         return;
       }
       const d = haversineMeters(pos.coords.latitude, pos.coords.longitude, TARGET_LAT, TARGET_LNG);
-      document.getElementById("distance").textContent = Math.round(d);
+      const distEl = document.getElementById("distance");
+      if (distEl) distEl.textContent = Math.round(d);
       setStatus(I18N.accuracy.replace("{accuracy}", acc), false);
 
       if (ADVANCE_TYPE === "proximity") {
         revealAdvanceUI();
         const pct = Math.max(0, Math.min(100, (1 - d / (PROXIMITY_M * 5)) * 100));
-        document.getElementById("proximity-bar").style.width = pct + "%";
+        const bar = document.getElementById("proximity-bar");
+        if (bar) bar.style.width = pct + "%";
         const label = document.getElementById("proximity-label");
+        if (!label) return;
         if (d <= PROXIMITY_M) {
           label.textContent = I18N.closeEnough;
           if (!advanced) {
             advanced = true;
-            document.getElementById("auto-advance-form").submit();
+            const form = document.getElementById("auto-advance-form");
+            if (form) advance(new FormData(form));
           }
         } else {
           label.textContent = I18N.getWithinAway
@@ -181,11 +191,5 @@
       setStatus(I18N.noGeo, true);
     }
   </script>
-
-  {% if current.advance_type == 'proximity' %}
-  <form id="auto-advance-form" method="post" action="{% url 'play_advance' token %}" style="display:none">
-    {% csrf_token %}
-  </form>
-  {% endif %}
 </body>
 </html>

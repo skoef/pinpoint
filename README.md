@@ -14,6 +14,8 @@ The button or question is only revealed once the player physically arrives at th
 
 **Players** open the link on their phone. The browser asks for location access, then shows the distance in metres to the next hidden waypoint. Once close enough, the advance UI appears. Progress is stored in the session so players can close and reopen the browser without losing their place.
 
+Advancing from one waypoint to the next happens in place, without a page reload — the server returns a rendered fragment for the next waypoint. This keeps the GPS watch alive for the whole route instead of re-acquiring a fix on every waypoint. The plain form POST still works if JavaScript is unavailable.
+
 ## Tech stack
 
 - Python 3.12+ / Django 4.2, SQLite (production container runs Python 3.13)
