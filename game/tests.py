@@ -2,7 +2,7 @@ import io
 import json
 
 from django.contrib.auth.models import User
-from django.core.files.storage import InMemoryStorage
+from django.core.files.base import ContentFile
 from django.test import TestCase, override_settings
 from django.urls import reverse
 
@@ -835,6 +835,160 @@ class PlayIntroMergedTest(TestCase):
         html = self._intro()
         self.assertIn('id="alert-toggle"', html)
         self.assertIn('id="start-form"', html)
+
+
+PNG_BYTES = (
+    b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01"
+    b"\x08\x02\x00\x00\x00\x90wS\xde\x00\x00\x00\x0cIDATx\x9cc\xf8\x0f\x00"
+    b"\x00\x01\x01\x00\x05\x18\xd4\xd9\x00\x00\x00\x00IEND\xaeB`\x82"
+)
+
+# An absolute MEDIA_URL reproduces what S3 storage returns, without needing boto3.
+S3_MEDIA = "https://s3.eu-west-1.amazonaws.com/pinpoint-bucket/"
+S3_STORAGE = override_settings(
+    DEFAULT_FILE_STORAGE="django.core.files.storage.InMemoryStorage",
+    MEDIA_URL=S3_MEDIA,
+)
+
+
+def png_upload(name="shot.png"):
+    from django.core.files.uploadedfile import SimpleUploadedFile
+    return SimpleUploadedFile(name, PNG_BYTES, content_type="image/png")
+
+
+@IN_MEMORY_STORAGE
+class ImagePrefixTest(GMTestCase):
+    """Each waypoint's images live under waypoints/<waypoint id>/."""
+
+    def setUp(self):
+        super().setUp()
+        self.route = make_route(owner=self.user)
+
+    def test_add_stores_under_waypoint_id(self):
+        post_form(self.client, reverse("waypoint_add", args=[self.route.pk]),
+                  {"lat": 52.1, "lng": 4.1}, files={"image": png_upload()})
+        wp = self.route.waypoints.first()
+        self.assertTrue(wp.image.name.startswith(f"waypoints/{wp.pk}/"),
+                        f"unexpected path: {wp.image.name}")
+
+    def test_update_stores_under_waypoint_id(self):
+        wp = make_waypoint(self.route, order=0)
+        post_form(self.client, reverse("waypoint_update", args=[wp.pk]),
+                  {"label": "x"}, files={"image": png_upload()})
+        wp.refresh_from_db()
+        self.assertTrue(wp.image.name.startswith(f"waypoints/{wp.pk}/"),
+                        f"unexpected path: {wp.image.name}")
+
+    def test_never_lands_under_none(self):
+        post_form(self.client, reverse("waypoint_add", args=[self.route.pk]),
+                  {"lat": 52.1, "lng": 4.1}, files={"image": png_upload()})
+        wp = self.route.waypoints.first()
+        self.assertNotIn("waypoints/None/", wp.image.name)
+
+    def test_two_waypoints_get_separate_prefixes(self):
+        for lat in (52.1, 52.2):
+            post_form(self.client, reverse("waypoint_add", args=[self.route.pk]),
+                      {"lat": lat, "lng": 4.1}, files={"image": png_upload()})
+        a, b = self.route.waypoints.order_by("order")
+        self.assertNotEqual(a.image.name, b.image.name)
+        self.assertTrue(a.image.name.startswith(f"waypoints/{a.pk}/"))
+        self.assertTrue(b.image.name.startswith(f"waypoints/{b.pk}/"))
+
+    def test_same_filename_on_different_waypoints_does_not_collide(self):
+        for lat in (52.1, 52.2):
+            post_form(self.client, reverse("waypoint_add", args=[self.route.pk]),
+                      {"lat": lat, "lng": 4.1},
+                      files={"image": png_upload("same.png")})
+        a, b = self.route.waypoints.order_by("order")
+        # Same basename, distinct keys -- the prefix alone keeps them apart, so
+        # neither needs Django's dedup suffix.
+        self.assertTrue(a.image.name.endswith("same.png"))
+        self.assertTrue(b.image.name.endswith("same.png"))
+        self.assertNotEqual(a.image.name, b.image.name)
+
+    def test_delete_still_removes_the_file(self):
+        post_form(self.client, reverse("waypoint_add", args=[self.route.pk]),
+                  {"lat": 52.1, "lng": 4.1}, files={"image": png_upload()})
+        wp = self.route.waypoints.first()
+        storage, name = wp.image.storage, wp.image.name
+        self.assertTrue(storage.exists(name))
+        self.client.post(reverse("waypoint_delete", args=[wp.pk]))
+        self.assertFalse(storage.exists(name))
+
+    def test_route_delete_removes_waypoint_images(self):
+        post_form(self.client, reverse("waypoint_add", args=[self.route.pk]),
+                  {"lat": 52.1, "lng": 4.1}, files={"image": png_upload()})
+        wp = self.route.waypoints.first()
+        storage, name = wp.image.storage, wp.image.name
+        self.route.is_active = False
+        self.route.save()
+        self.client.post(reverse("route_delete", args=[self.route.pk]))
+        self.assertFalse(storage.exists(name))
+
+
+@IN_MEMORY_STORAGE
+class ImageUrlTest(GMTestCase):
+    """Image URLs must never be prefixed with the app's own host.
+
+    With local storage image.url is a path, but S3 storage returns a full URL --
+    prepending scheme://host to that produced https://app/https://s3....
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.route = make_route(owner=self.user)
+        self.wp = make_waypoint(self.route, order=0, advance_type=Waypoint.QUESTION,
+                                question="Q?", answer="a")
+        self.wp.image.save("shot.png", ContentFile(PNG_BYTES), save=True)
+
+    def _editor(self):
+        return self.client.get(reverse("route_edit", args=[self.route.pk])).content.decode()
+
+    def _player(self):
+        return self.client.get(reverse("play_game", args=[self.route.token])).content.decode()
+
+    # --- the reported bug ---------------------------------------------------
+
+    @S3_STORAGE
+    def test_editor_does_not_double_prefix_s3_url(self):
+        html = self._editor()
+        self.assertNotIn(f"://testserver/{S3_MEDIA}", html)
+        self.assertNotIn("testserver/https://", html)
+        self.assertIn(f'data-image-url="{self.wp.image.url}"', html)
+
+    @S3_STORAGE
+    def test_editor_url_is_the_storage_url_verbatim(self):
+        self.assertTrue(self.wp.image.url.startswith(S3_MEDIA),
+                        "precondition: storage should yield an absolute URL")
+        self.assertIn(f'data-image-url="{self.wp.image.url}"', self._editor())
+
+    @S3_STORAGE
+    def test_player_screen_does_not_double_prefix(self):
+        html = self._player()
+        self.assertNotIn("testserver/https://", html)
+        self.assertIn(f'src="{self.wp.image.url}"', html)
+
+    @S3_STORAGE
+    def test_json_does_not_double_prefix(self):
+        data = post_form(self.client, reverse("waypoint_update", args=[self.wp.pk]),
+                         {"label": "x"}).json()
+        self.assertNotIn("testserver/https://", data["image_url"])
+        self.assertEqual(data["image_url"], self.wp.image.url)
+
+    # --- local storage must keep working ------------------------------------
+
+    def test_local_storage_url_still_renders(self):
+        html = self._editor()
+        self.assertIn(f'data-image-url="{self.wp.image.url}"', html)
+        self.assertTrue(self.wp.image.url.startswith("/media/"),
+                        f"expected a local path, got {self.wp.image.url}")
+
+    def test_local_json_url_is_absolute_for_the_editor(self):
+        # build_absolute_uri only fills in the host for relative URLs.
+        data = post_form(self.client, reverse("waypoint_update", args=[self.wp.pk]),
+                         {"label": "x"}).json()
+        self.assertTrue(data["image_url"].startswith("http://testserver/media/"),
+                        data["image_url"])
 
 
 class TemplateLeakTest(TestCase):

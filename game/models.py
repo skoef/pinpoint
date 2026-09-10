@@ -33,6 +33,17 @@ class Route(models.Model):
         return self.completion_emoji or self.DEFAULT_COMPLETION_EMOJI
 
 
+def waypoint_image_path(instance, filename):
+    """Give every waypoint its own prefix, so one waypoint's images are easy to
+    find (and drop) in the bucket without touching another's.
+
+    The Waypoint must already be saved, or ``pk`` is None and everything lands
+    under ``waypoints/None/``. Both write paths in ``views.py`` create the row
+    first and attach the image in a second save for exactly this reason.
+    """
+    return f"waypoints/{instance.pk}/{filename}"
+
+
 class Waypoint(models.Model):
     BUTTON = "button"
     QUESTION = "question"
@@ -54,7 +65,7 @@ class Waypoint(models.Model):
     question = models.TextField(blank=True)
     answer = models.CharField(max_length=500, blank=True)
     proximity_meters = models.PositiveIntegerField(default=20)
-    image = models.ImageField(upload_to="waypoints/", blank=True)
+    image = models.ImageField(upload_to=waypoint_image_path, blank=True)
 
     class Meta:
         ordering = ["order"]

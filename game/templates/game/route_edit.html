@@ -80,7 +80,8 @@
           data-question="{{ wp.question }}"
           data-answer="{{ wp.answer }}"
           data-proximity="{{ wp.proximity_meters }}"
-          data-image-url="{% if wp.image %}{{ request.scheme }}://{{ request.get_host }}{{ wp.image.url }}{% endif %}">
+          {# Never prepend scheme/host: S3 already returns an absolute URL. #}
+          data-image-url="{% if wp.image %}{{ wp.image.url }}{% endif %}">
         <span class="d-flex align-items-center gap-2 flex-grow-1 overflow-hidden">
           <span class="badge bg-secondary flex-shrink-0">{{ forloop.counter }}</span>
           <span class="badge badge-{{ wp.advance_type }} text-white flex-shrink-0">

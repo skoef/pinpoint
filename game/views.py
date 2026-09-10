@@ -116,6 +116,8 @@ def waypoint_add(request, pk):
         answer=request.POST.get("answer", ""),
         proximity_meters=int(request.POST.get("proximity_meters", 20)),
     )
+    # Attached in a second save on purpose: the upload path embeds wp.pk, which
+    # does not exist until the row above is written.
     if request.FILES.get("image"):
         wp.image = request.FILES["image"]
         wp.save(update_fields=["image"])
