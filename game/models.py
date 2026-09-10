@@ -34,17 +34,21 @@ class Route(models.Model):
 
 
 def waypoint_image_path(instance, filename):
-    """Give every waypoint its own prefix, so one waypoint's images are easy to
-    find (and drop) in the bucket without touching another's.
+    """Group a route's waypoint images under one prefix, so everything belonging
+    to a route can be found (and dropped) in the bucket in one go.
 
-    The Waypoint must already be saved, or ``pk`` is None and everything lands
-    under ``waypoints/None/``. Both write paths in ``views.py`` create the row
-    first and attach the image in a second save for exactly this reason.
+    Uses ``route_id`` rather than the waypoint's own ``pk``: the foreign key is
+    set as soon as the instance is built, so the image can be attached before the
+    row is ever written.
     """
-    return f"waypoints/{instance.pk}/{filename}"
+    return f"waypoints/{instance.route_id}/{filename}"
 
 
 class Waypoint(models.Model):
+    # Single source of truth: the model default, the add view's fallback and the
+    # editor's pre-filled value all read this.
+    DEFAULT_PROXIMITY_METERS = 10
+
     BUTTON = "button"
     QUESTION = "question"
     PROXIMITY = "proximity"
@@ -64,7 +68,7 @@ class Waypoint(models.Model):
     button_caption = models.CharField(max_length=200, blank=True)
     question = models.TextField(blank=True)
     answer = models.CharField(max_length=500, blank=True)
-    proximity_meters = models.PositiveIntegerField(default=20)
+    proximity_meters = models.PositiveIntegerField(default=DEFAULT_PROXIMITY_METERS)
     image = models.ImageField(upload_to=waypoint_image_path, blank=True)
 
     class Meta:

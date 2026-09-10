@@ -12,7 +12,12 @@ play_advance so the player advances without a page reload.
 <p id="status-msg">{% trans "Waiting for location…" %}</p>
 
 <div id="advance-ui" style="display:none">
-  {% if current.image %}
+  {% comment %}
+  Not for proximity: the player is advanced automatically, so there is no screen
+  to show a picture on. An image left over from an earlier advance type stays in
+  storage but is not rendered.
+  {% endcomment %}
+  {% if current.image and current.advance_type != 'proximity' %}
   <div class="mt-4">
     <img src="{{ current.image.url }}" alt="" class="img-fluid rounded" style="max-height:300px">
   </div>

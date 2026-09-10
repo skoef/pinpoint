@@ -158,11 +158,16 @@
         <div class="conditional" id="cond-proximity">
           <div class="mb-3">
             <label class="form-label">{% trans "Auto-advance radius (meters)" %}</label>
-            <input type="number" class="form-control" id="modal-proximity" value="20" min="5" max="500">
+            <input type="number" class="form-control" id="modal-proximity"
+                   value="{{ default_proximity }}" min="5" max="500">
           </div>
         </div>
 
-        <div class="mb-3">
+        {% comment %}
+        Hidden for proximity waypoints: the player is advanced automatically, so
+        there is no screen to show a picture on.
+        {% endcomment %}
+        <div class="mb-3" id="image-field">
           <label class="form-label">{% trans "Image" %} <span class="text-muted">({% trans "optional" %})</span></label>
           <div id="modal-image-preview" class="mb-2" style="display:none">
             <img id="modal-image-preview-img" src="" alt="" class="img-fluid rounded" style="max-height:160px">
@@ -191,6 +196,7 @@
 {% trans "Edit waypoint" as str_edit_wp %}
 {% trans "Waypoint" as str_waypoint %}
 const ROUTE_PK = {{ route.pk }};
+const DEFAULT_PROXIMITY = {{ default_proximity }};
 const CSRF = "{{ csrf_token }}";
 const STR_ADD_WAYPOINT = "{{ str_add_wp|escapejs }}";
 const STR_EDIT_WAYPOINT = "{{ str_edit_wp|escapejs }}";
@@ -230,7 +236,7 @@ map.fitBounds([[Math.min(...lats), Math.min(...lngs)], [Math.max(...lats), Math.
 
 map.on("click", (e) => {
   pendingLatLng = e.latlng;
-  openModal(null, e.latlng.lat, e.latlng.lng, "", "button", "", "", "", "", 20, "");
+  openModal(null, e.latlng.lat, e.latlng.lng, "", "button", "", "", "", "", DEFAULT_PROXIMITY, "");
 });
 
 // --- Modal helpers ---
@@ -266,6 +272,8 @@ function updateConditionals() {
   document.getElementById("cond-button").style.display    = type === "button"    ? "block" : "none";
   document.getElementById("cond-question").style.display  = type === "question"  ? "block" : "none";
   document.getElementById("cond-proximity").style.display = type === "proximity" ? "block" : "none";
+  // Proximity waypoints advance on their own, so there is no screen for a picture.
+  document.getElementById("image-field").style.display    = type === "proximity" ? "none" : "block";
 }
 
 document.getElementById("modal-save").addEventListener("click", async () => {
@@ -280,7 +288,7 @@ document.getElementById("modal-save").addEventListener("click", async () => {
   fd.append("button_caption",   document.getElementById("modal-button-caption").value);
   fd.append("question",         document.getElementById("modal-question").value);
   fd.append("answer",           document.getElementById("modal-answer").value);
-  fd.append("proximity_meters", parseInt(document.getElementById("modal-proximity").value) || 20);
+  fd.append("proximity_meters", parseInt(document.getElementById("modal-proximity").value) || DEFAULT_PROXIMITY);
   const imageFile = document.getElementById("modal-image").files[0];
   if (imageFile) fd.append("image", imageFile);
   if (document.getElementById("modal-clear-image").checked) fd.append("clear_image", "1");

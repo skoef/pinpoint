@@ -1386,28 +1386,113 @@ def png_upload(name="shot.png"):
     return SimpleUploadedFile(name, PNG_BYTES, content_type="image/png")
 
 
+class ProximityDefaultTest(GMTestCase):
+    def test_model_default_is_10(self):
+        route = make_route(owner=self.user)
+        wp = Waypoint.objects.create(route=route, order=0, lat=52.0, lng=4.0)
+        self.assertEqual(wp.proximity_meters, 10)
+
+    def test_add_without_a_radius_uses_the_default(self):
+        route = make_route(owner=self.user)
+        post_form(self.client, reverse("waypoint_add", args=[route.pk]),
+                  {"lat": 52.1, "lng": 4.1, "advance_type": Waypoint.PROXIMITY})
+        self.assertEqual(route.waypoints.first().proximity_meters,
+                         Waypoint.DEFAULT_PROXIMITY_METERS)
+
+    def test_editor_prefills_the_default(self):
+        route = make_route(owner=self.user)
+        html = self.client.get(reverse("route_edit", args=[route.pk])).content.decode()
+        self.assertIn('id="modal-proximity"', html)
+        self.assertIn('value="10"', html)
+        self.assertIn("const DEFAULT_PROXIMITY = 10;", html)
+
+    def test_an_explicit_radius_still_wins(self):
+        route = make_route(owner=self.user)
+        post_form(self.client, reverse("waypoint_add", args=[route.pk]),
+                  {"lat": 52.1, "lng": 4.1, "proximity_meters": 75})
+        self.assertEqual(route.waypoints.first().proximity_meters, 75)
+
+
 @IN_MEMORY_STORAGE
-class ImagePrefixTest(GMTestCase):
-    """Each waypoint's images live under waypoints/<waypoint id>/."""
+class ProximityHasNoImageTest(GMTestCase):
+    """Proximity waypoints advance on their own, so an image has nowhere to go."""
 
     def setUp(self):
         super().setUp()
         self.route = make_route(owner=self.user)
 
-    def test_add_stores_under_waypoint_id(self):
+    def test_editor_hides_the_image_field_for_proximity(self):
+        html = self.client.get(reverse("route_edit", args=[self.route.pk])).content.decode()
+        self.assertIn('id="image-field"', html)
+        self.assertIn('"image-field").style.display    = type === "proximity" ? "none" : "block"',
+                      html)
+
+    def test_player_screen_omits_the_image_on_proximity(self):
+        wp = make_waypoint(self.route, order=0, advance_type=Waypoint.PROXIMITY)
+        wp.image.save("shot.png", ContentFile(PNG_BYTES), save=True)
+        html = self.client.get(reverse("play_game", args=[self.route.token])).content.decode()
+        self.assertNotIn(wp.image.url, html)
+        self.assertIn('id="proximity-bar"', html)
+
+    def test_player_screen_still_shows_images_on_other_types(self):
+        for advance_type in (Waypoint.BUTTON, Waypoint.QUESTION):
+            route = make_route(name=f"r-{advance_type}", owner=self.user)
+            wp = make_waypoint(route, order=0, advance_type=advance_type,
+                               question="Q?", answer="a")
+            wp.image.save("shot.png", ContentFile(PNG_BYTES), save=True)
+            html = self.client.get(
+                reverse("play_game", args=[route.token])).content.decode()
+            self.assertIn(wp.image.url, html, f"missing image for {advance_type}")
+
+    def test_an_existing_image_is_kept_when_switching_to_proximity(self):
+        # Hidden, not deleted: switching back should not have lost the file.
+        wp = make_waypoint(self.route, order=0, advance_type=Waypoint.QUESTION)
+        wp.image.save("shot.png", ContentFile(PNG_BYTES), save=True)
+        name = wp.image.name
+        post_form(self.client, reverse("waypoint_update", args=[wp.pk]),
+                  {"advance_type": Waypoint.PROXIMITY})
+        wp.refresh_from_db()
+        self.assertEqual(wp.advance_type, Waypoint.PROXIMITY)
+        self.assertEqual(wp.image.name, name)
+        self.assertTrue(wp.image.storage.exists(name))
+
+
+@IN_MEMORY_STORAGE
+class ImagePrefixTest(GMTestCase):
+    """Waypoint images live under waypoints/<route id>/, grouped per route."""
+
+    def setUp(self):
+        super().setUp()
+        self.route = make_route(owner=self.user)
+
+    def test_add_stores_under_route_id(self):
         post_form(self.client, reverse("waypoint_add", args=[self.route.pk]),
                   {"lat": 52.1, "lng": 4.1}, files={"image": png_upload()})
         wp = self.route.waypoints.first()
-        self.assertTrue(wp.image.name.startswith(f"waypoints/{wp.pk}/"),
+        self.assertTrue(wp.image.name.startswith(f"waypoints/{self.route.pk}/"),
                         f"unexpected path: {wp.image.name}")
 
-    def test_update_stores_under_waypoint_id(self):
+    def test_update_stores_under_route_id(self):
         wp = make_waypoint(self.route, order=0)
         post_form(self.client, reverse("waypoint_update", args=[wp.pk]),
                   {"label": "x"}, files={"image": png_upload()})
         wp.refresh_from_db()
-        self.assertTrue(wp.image.name.startswith(f"waypoints/{wp.pk}/"),
+        self.assertTrue(wp.image.name.startswith(f"waypoints/{self.route.pk}/"),
                         f"unexpected path: {wp.image.name}")
+
+    def test_path_does_not_use_the_waypoint_id(self):
+        # Burn some waypoint ids first, otherwise the route and its first
+        # waypoint are both pk=1 and "waypoints/1/" would match either one.
+        filler = make_route(name="Filler", owner=self.user)
+        for order in range(3):
+            make_waypoint(filler, order=order)
+
+        post_form(self.client, reverse("waypoint_add", args=[self.route.pk]),
+                  {"lat": 52.1, "lng": 4.1}, files={"image": png_upload()})
+        wp = self.route.waypoints.first()
+        self.assertNotEqual(wp.pk, self.route.pk, "precondition: ids must differ")
+        self.assertIn(f"waypoints/{self.route.pk}/", wp.image.name)
+        self.assertNotIn(f"waypoints/{wp.pk}/", wp.image.name)
 
     def test_never_lands_under_none(self):
         post_form(self.client, reverse("waypoint_add", args=[self.route.pk]),
@@ -1415,26 +1500,46 @@ class ImagePrefixTest(GMTestCase):
         wp = self.route.waypoints.first()
         self.assertNotIn("waypoints/None/", wp.image.name)
 
-    def test_two_waypoints_get_separate_prefixes(self):
+    def test_unsaved_waypoint_already_resolves_its_path(self):
+        # route_id is set before the row exists, so no save-then-attach dance is
+        # needed the way it was when the path used the waypoint's own pk.
+        wp = Waypoint(route=self.route, order=0, lat=52.1, lng=4.1)
+        self.assertIsNone(wp.pk)
+        wp.image.save("fresh.png", ContentFile(PNG_BYTES), save=False)
+        self.assertTrue(wp.image.name.startswith(f"waypoints/{self.route.pk}/"),
+                        f"unexpected path: {wp.image.name}")
+        self.assertNotIn("None", wp.image.name)
+
+    def test_waypoints_of_one_route_share_a_prefix(self):
         for lat in (52.1, 52.2):
             post_form(self.client, reverse("waypoint_add", args=[self.route.pk]),
                       {"lat": lat, "lng": 4.1}, files={"image": png_upload()})
         a, b = self.route.waypoints.order_by("order")
-        self.assertNotEqual(a.image.name, b.image.name)
-        self.assertTrue(a.image.name.startswith(f"waypoints/{a.pk}/"))
-        self.assertTrue(b.image.name.startswith(f"waypoints/{b.pk}/"))
+        prefix = f"waypoints/{self.route.pk}/"
+        self.assertTrue(a.image.name.startswith(prefix))
+        self.assertTrue(b.image.name.startswith(prefix))
 
-    def test_same_filename_on_different_waypoints_does_not_collide(self):
+    def test_different_routes_get_different_prefixes(self):
+        other = make_route(name="Other", owner=self.user)
+        for route in (self.route, other):
+            post_form(self.client, reverse("waypoint_add", args=[route.pk]),
+                      {"lat": 52.1, "lng": 4.1}, files={"image": png_upload()})
+        mine = self.route.waypoints.first()
+        theirs = other.waypoints.first()
+        self.assertTrue(mine.image.name.startswith(f"waypoints/{self.route.pk}/"))
+        self.assertTrue(theirs.image.name.startswith(f"waypoints/{other.pk}/"))
+
+    def test_same_filename_within_a_route_is_de_duplicated(self):
+        # Sharing a prefix means identical names would clash, so Django suffixes
+        # the second one rather than overwriting the first.
         for lat in (52.1, 52.2):
             post_form(self.client, reverse("waypoint_add", args=[self.route.pk]),
                       {"lat": lat, "lng": 4.1},
                       files={"image": png_upload("same.png")})
         a, b = self.route.waypoints.order_by("order")
-        # Same basename, distinct keys -- the prefix alone keeps them apart, so
-        # neither needs Django's dedup suffix.
-        self.assertTrue(a.image.name.endswith("same.png"))
-        self.assertTrue(b.image.name.endswith("same.png"))
         self.assertNotEqual(a.image.name, b.image.name)
+        self.assertTrue(a.image.storage.exists(a.image.name))
+        self.assertTrue(b.image.storage.exists(b.image.name))
 
     def test_delete_still_removes_the_file(self):
         post_form(self.client, reverse("waypoint_add", args=[self.route.pk]),

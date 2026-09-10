@@ -76,6 +76,7 @@ def route_edit(request, pk):
         "route": route,
         "waypoints": waypoints,
         "emoji_choices": Route.COMPLETION_EMOJI_CHOICES,
+        "default_proximity": Waypoint.DEFAULT_PROXIMITY_METERS,
     })
 
 
@@ -123,13 +124,13 @@ def waypoint_add(request, pk):
         button_caption=request.POST.get("button_caption", ""),
         question=request.POST.get("question", ""),
         answer=request.POST.get("answer", ""),
-        proximity_meters=int(request.POST.get("proximity_meters", 20)),
+        proximity_meters=int(request.POST.get(
+            "proximity_meters", Waypoint.DEFAULT_PROXIMITY_METERS)),
+        # Attachable straight away: the upload path only needs route_id, which is
+        # set before the row is written. "" rather than None keeps the
+        # non-nullable column happy when no file was sent.
+        image=request.FILES.get("image") or "",
     )
-    # Attached in a second save on purpose: the upload path embeds wp.pk, which
-    # does not exist until the row above is written.
-    if request.FILES.get("image"):
-        wp.image = request.FILES["image"]
-        wp.save(update_fields=["image"])
     return JsonResponse(_wp_json(wp, request))
 
 
