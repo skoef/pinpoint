@@ -75,6 +75,22 @@ Everything is driven by environment variables. All are optional; leaving them un
 | `AWS_S3_ENDPOINT_URL` | unset | Only for S3-compatible stores (MinIO); leave unset for real S3. |
 | `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | unset | Omit to use the instance's IAM role. |
 
+### Waypoint images in S3
+
+With `USE_S3=true`, images are stored under `waypoints/<route id>/`, so everything belonging to one route shares a prefix. Deleting a waypoint deletes its image, and deleting a route deletes all of its waypoints' images — a `post_delete` signal on `Waypoint` calls `image.delete()`, and cascading a route delete fires it for each waypoint.
+
+That means **`s3:DeleteObject` is required**, not just read and write:
+
+```json
+{
+  "Effect": "Allow",
+  "Action": ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"],
+  "Resource": "arn:aws:s3:::YOUR-IMAGE-BUCKET/waypoints/*"
+}
+```
+
+Without it, route deletion fails outright rather than merely leaving orphaned files: the error propagates out of `route.delete()`, Django rolls the transaction back, and the route stays in the database.
+
 ### Persisting SQLite in S3
 
 An alternative to running Postgres. The container has no durable disk, so with `SQLITE_S3_BUCKET` set:
