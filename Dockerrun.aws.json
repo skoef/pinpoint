@@ -1,7 +1,7 @@
 {
   "AWSEBDockerrunVersion": "1",
   "Image": {
-    "Name": "docker.io/rschoof/pinpoint:v0.0.0",
+    "Name": "docker.io/rschoof/pinpoint:v0.1.0",
     "Update": "true"
   },
   "Ports": [
