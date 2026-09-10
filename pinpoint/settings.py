@@ -13,7 +13,7 @@ https://docs.djangoproject.com/en/4.2/ref/settings/
 import os
 from pathlib import Path
 
-from .dbconfig import database_config
+from .dbconfig import SQLITE_ENGINE, database_config
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -44,6 +44,10 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    # Serves everything under STATIC_ROOT. Without this the admin has no CSS in
+    # production: gunicorn only runs the WSGI app, and Django itself refuses to
+    # serve static files once DEBUG is off.
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.locale.LocaleMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -127,6 +131,16 @@ USE_TZ = True
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 
+# Files served from the site root rather than under STATIC_URL, so that
+# /favicon.ico works for clients that ask for it directly.
+WHITENOISE_ROOT = BASE_DIR / "public"
+
+if not DEBUG:
+    # Hashed filenames plus pre-compressed copies, so static assets can be
+    # cached indefinitely. Only outside DEBUG: the manifest is written by
+    # collectstatic, and requiring it locally would break `runserver`.
+    STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
+
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
 
@@ -139,6 +153,19 @@ if os.environ.get("USE_S3", "false").lower() == "true":
         print("setting AWS credentials")
         AWS_ACCESS_KEY_ID = os.environ["AWS_ACCESS_KEY_ID"]
         AWS_SECRET_ACCESS_KEY = os.environ["AWS_SECRET_ACCESS_KEY"]
+
+# SQLite-on-S3 persistence
+#
+# The container downloads the database on start and uploads it again after
+# writes, which is only safe with a SINGLE instance -- two containers would each
+# hold their own copy and the last upload would silently discard the other's
+# writes. Ignored unless SQLite is the backend.
+SQLITE_S3_BUCKET = os.environ.get("SQLITE_S3_BUCKET", "")
+SQLITE_S3_KEY = os.environ.get("SQLITE_S3_KEY", "db/db.sqlite3")
+# Touched by a signal after every write; the entrypoint's loop watches for it.
+SQLITE_DIRTY_MARKER = os.environ.get("SQLITE_DIRTY_MARKER", "/tmp/pinpoint-db-dirty")
+SQLITE_S3_SYNC = bool(SQLITE_S3_BUCKET) and DATABASES["default"]["ENGINE"] == SQLITE_ENGINE
+
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/4.2/ref/settings/#default-auto-field

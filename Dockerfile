@@ -18,8 +18,12 @@ COPY . .
 # Compile translation catalogues
 RUN python manage.py compilemessages -l en -l nl
 
-# Collect static files (served separately in production, but available in the image)
-RUN SECRET_KEY=build-only python manage.py collectstatic --noinput
+# Collect static files, served at runtime by WhiteNoise.
+# DEBUG=false matters: it is what selects the manifest storage, so the hashed
+# names and staticfiles.json are built here. Collecting with DEBUG=true would
+# leave no manifest, and the runtime (DEBUG=false) would then fail every
+# {% static %} lookup instead of merely 404ing.
+RUN SECRET_KEY=build-only DEBUG=false python manage.py collectstatic --noinput
 
 RUN chmod +x entrypoint.sh
 

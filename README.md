@@ -65,10 +65,60 @@ Everything is driven by environment variables. All are optional; leaving them un
 | `DB_SSLMODE` | `require` | Use `verify-full` with `sslrootcert` for full certificate validation. |
 | `DB_CONN_MAX_AGE` | `600` | Seconds to reuse a connection. `0` disables pooling. |
 | `DB_CONNECT_TIMEOUT` | `5` | Seconds before giving up on connecting. |
+| `SQLITE_S3_BUCKET` | unset → no sync | Bucket to persist the SQLite database in. See below. |
+| `SQLITE_S3_KEY` | `db/db.sqlite3` | Object key for the database. |
+| `SQLITE_SYNC_INTERVAL` | `30` | Seconds between upload checks. |
+| `SQLITE_DIRTY_MARKER` | `/tmp/pinpoint-db-dirty` | File touched after each write. |
 | `USE_S3` | `false` | `true` stores waypoint images in S3 instead of `media/`. |
 | `AWS_STORAGE_BUCKET_NAME` | — | Required when `USE_S3=true`. |
 | `AWS_S3_REGION_NAME` | unset | |
+| `AWS_S3_ENDPOINT_URL` | unset | Only for S3-compatible stores (MinIO); leave unset for real S3. |
 | `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | unset | Omit to use the instance's IAM role. |
+
+### Persisting SQLite in S3
+
+An alternative to running Postgres. The container has no durable disk, so with `SQLITE_S3_BUCKET` set:
+
+1. On start, `entrypoint.sh` downloads the database from S3. A missing object is fine — `migrate` creates a new one and it is uploaded immediately.
+2. A Django signal touches `SQLITE_DIRTY_MARKER` after every write. Since reads vastly outnumber writes, nothing is uploaded when nothing changed.
+3. A loop checks the marker every `SQLITE_SYNC_INTERVAL` seconds and uploads when it finds one. The marker is cleared *before* the upload, so a write landing mid-upload is picked up on the next pass rather than lost.
+4. On `SIGTERM` (i.e. every deploy) the database is flushed to S3 one last time.
+
+Uploads use SQLite's online-backup API rather than copying the file, which is safe while the app is serving requests.
+
+#### Required IAM permissions
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": ["s3:ListBucket"],
+      "Resource": "arn:aws:s3:::YOUR-BUCKET"
+    },
+    {
+      "Effect": "Allow",
+      "Action": ["s3:GetObject", "s3:PutObject"],
+      "Resource": "arn:aws:s3:::YOUR-BUCKET/db/db.sqlite3"
+    }
+  ]
+}
+```
+
+`s3:ListBucket` is easy to overlook but required, and its absence is confusing: **S3 answers `403 Forbidden` instead of `404 Not Found` for an object that does not exist** when the caller cannot list the bucket, because a 404 would itself disclose whether the object is there. So on a first deploy — when there is legitimately no database yet — a policy without `ListBucket` produces a 403 that looks like a credentials problem.
+
+There is no `s3:HeadObject` action to grant; `HeadObject` is authorised by `s3:GetObject`.
+
+The app deliberately **refuses to start** on a 403 rather than assuming the database is missing. Assuming otherwise would mean starting empty and then uploading that empty database over a real one at the first write. The error message spells out the policy above.
+
+Credentials come from boto3's standard chain — `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` if set, otherwise the instance's IAM role — the same chain used for image storage.
+
+> **This supports exactly one instance.** Two containers would each hold their own copy and the last upload would silently discard the other's writes. Keep the Beanstalk environment at a single instance, and enable **bucket versioning** so a bad overwrite can be recovered.
+>
+> Anything written since the last upload is lost if the instance dies without a `SIGTERM` (autoscaling replacement, hardware failure, `docker kill`). The exposure is at most `SQLITE_SYNC_INTERVAL` seconds of writes. Use Postgres instead if that is unacceptable.
+
+Setting `DB_HOST` disables all of this — the sync only applies when SQLite is the backend.
 
 ### Using Postgres (RDS)
 
@@ -87,6 +137,10 @@ python manage.py test game
 The suite runs on SQLite by default. To run it against Postgres, export the `DB_*` variables first.
 
 ## Deployment
+
+Static files (the admin's CSS and JS) are served by [WhiteNoise](https://whitenoise.readthedocs.io/) straight from gunicorn — there is no nginx or CloudFront in front of the app, and Django itself will not serve static files once `DEBUG=false`. `collectstatic` runs at image build time **with `DEBUG=false`**, which is what produces the hashed filenames and `staticfiles.json`; collecting with `DEBUG=true` would leave no manifest and every `{% static %}` lookup would then fail at runtime.
+
+Anything in `public/` is served from the site root, which is how `/favicon.ico` is delivered.
 
 The app ships as a Docker image, deployed to AWS Elastic Beanstalk as a single-container Docker application via `Dockerrun.aws.json`. Environment variables are configured on the Beanstalk environment and injected into the container — `Dockerrun.aws.json` version 1 has no `environment` section, so the table above is the reference for what to set.
 

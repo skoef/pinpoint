@@ -14,5 +14,8 @@ pillow==11.3.0
 # and throws the toolchain away afterwards.
 psycopg[c]>=3.1.8
 qrcode==8.2
+# Serves STATIC_ROOT from gunicorn; without it the admin has no CSS in
+# production, since Django will not serve static files when DEBUG is off.
+whitenoise==6.12.0
 sqlparse==0.5.5
 typing_extensions==4.16.0

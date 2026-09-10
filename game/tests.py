@@ -1,17 +1,28 @@
+import gc
 import io
 import json
+import os
+import shutil
+import sqlite3
+import tempfile
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from django.contrib.auth.models import User
 from django.core.exceptions import ImproperlyConfigured
 from django.core.files.base import ContentFile
+from django.core.management import call_command
+from django.core.management.base import CommandError
 from django.db import OperationalError
+from django.db.models.signals import m2m_changed, post_delete, post_save
 from django.test import SimpleTestCase, TestCase, override_settings
 from django.urls import reverse
 
 from pinpoint.dbconfig import POSTGRES_ENGINE, SQLITE_ENGINE, database_config
 
+import game
+from . import dbsync
+from .apps import GameConfig
 from .models import Route, Waypoint
 
 IN_MEMORY_STORAGE = override_settings(DEFAULT_FILE_STORAGE="django.core.files.storage.InMemoryStorage")
@@ -159,6 +170,387 @@ class DatabaseConfigTest(SimpleTestCase):
         config = database_config(env={}, base_dir=".")
         self.assertNotIn("USER", config)
         self.assertNotIn("OPTIONS", config)
+
+
+# ---------------------------------------------------------------------------
+# SQLite <-> S3 persistence
+# ---------------------------------------------------------------------------
+
+def sqlite_with_rows(path, rows=("alpha", "beta")):
+    """A real SQLite file, so snapshot behaviour is exercised for real."""
+    conn = sqlite3.connect(path)
+    try:
+        conn.execute("CREATE TABLE t (name TEXT)")
+        conn.executemany("INSERT INTO t VALUES (?)", [(r,) for r in rows])
+        conn.commit()
+    finally:
+        conn.close()
+    return path
+
+
+class DbSyncStateTest(SimpleTestCase):
+    """The dirty marker: the only signal the upload loop has to go on."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.marker = os.path.join(self.tmp, "dirty")
+        overrides = override_settings(
+            SQLITE_S3_SYNC=True, SQLITE_S3_BUCKET="b", SQLITE_S3_KEY="db/db.sqlite3",
+            SQLITE_DIRTY_MARKER=self.marker,
+        )
+        overrides.enable()
+        self.addCleanup(overrides.disable)
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+
+    def test_starts_clean(self):
+        self.assertFalse(dbsync.is_dirty())
+
+    def test_mark_then_clear(self):
+        dbsync.mark_dirty()
+        self.assertTrue(dbsync.is_dirty())
+        dbsync.clear_marker()
+        self.assertFalse(dbsync.is_dirty())
+
+    def test_marking_twice_is_harmless(self):
+        dbsync.mark_dirty()
+        dbsync.mark_dirty()
+        self.assertTrue(dbsync.is_dirty())
+
+    def test_clearing_when_already_clean_is_harmless(self):
+        dbsync.clear_marker()  # must not raise FileNotFoundError
+        self.assertFalse(dbsync.is_dirty())
+
+    def test_unwritable_marker_does_not_raise(self):
+        # A request must never fail because the marker could not be written.
+        with override_settings(SQLITE_DIRTY_MARKER="/nonexistent-dir/dirty"):
+            dbsync.mark_dirty()
+        self.assertFalse(dbsync.is_dirty())
+
+
+class DbSyncEnabledTest(SimpleTestCase):
+    def test_disabled_without_a_bucket(self):
+        with override_settings(SQLITE_S3_SYNC=False):
+            self.assertFalse(dbsync.enabled())
+
+    def test_enabled_flag_is_computed_from_bucket_and_engine(self):
+        # Guard the wiring in settings.py: a bucket alone is not enough, the
+        # backend has to actually be SQLite.
+        self.assertFalse(database_config(env={
+            "DB_HOST": "rds.example.com", "DB_NAME": "n",
+            "DB_USER": "u", "DB_PASSWORD": "p",
+        })["ENGINE"] == SQLITE_ENGINE)
+
+
+class DbSyncSnapshotTest(SimpleTestCase):
+    """Snapshots must go through SQLite's backup API, not a plain file copy."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        self.db = sqlite_with_rows(os.path.join(self.tmp, "src.sqlite3"))
+
+    def _rows(self, path):
+        conn = sqlite3.connect(path)
+        try:
+            return [r[0] for r in conn.execute("SELECT name FROM t ORDER BY name")]
+        finally:
+            conn.close()
+
+    def test_snapshot_copies_all_rows(self):
+        out = os.path.join(self.tmp, "out.sqlite3")
+        with patch.object(dbsync, "database_path", return_value=self.db):
+            dbsync.snapshot(out)
+        self.assertEqual(self._rows(out), ["alpha", "beta"])
+
+    def test_snapshot_is_a_valid_database(self):
+        out = os.path.join(self.tmp, "out.sqlite3")
+        with patch.object(dbsync, "database_path", return_value=self.db):
+            dbsync.snapshot(out)
+        conn = sqlite3.connect(out)
+        try:
+            self.assertEqual(conn.execute("PRAGMA integrity_check").fetchone()[0], "ok")
+        finally:
+            conn.close()
+
+    def test_snapshot_survives_an_open_writer(self):
+        # The upload loop runs while the app is serving, so the backup API has
+        # to cope with another connection holding the database open.
+        writer = sqlite3.connect(self.db)
+        self.addCleanup(writer.close)
+        writer.execute("INSERT INTO t VALUES ('gamma')")
+        writer.commit()
+        out = os.path.join(self.tmp, "out.sqlite3")
+        with patch.object(dbsync, "database_path", return_value=self.db):
+            dbsync.snapshot(out)
+        self.assertEqual(self._rows(out), ["alpha", "beta", "gamma"])
+
+    def test_snapshot_opens_the_source_read_only(self):
+        # Uploading must never mutate the live database.
+        before = os.path.getsize(self.db)
+        out = os.path.join(self.tmp, "out.sqlite3")
+        with patch.object(dbsync, "database_path", return_value=self.db):
+            dbsync.snapshot(out)
+        self.assertEqual(os.path.getsize(self.db), before)
+
+
+class DbSyncTransferTest(SimpleTestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        self.db = os.path.join(self.tmp, "db.sqlite3")
+        overrides = override_settings(
+            SQLITE_S3_SYNC=True, SQLITE_S3_BUCKET="pinpoint-db",
+            SQLITE_S3_KEY="db/db.sqlite3",
+            SQLITE_DIRTY_MARKER=os.path.join(self.tmp, "dirty"),
+        )
+        overrides.enable()
+        self.addCleanup(overrides.disable)
+
+    def _missing_key_error(self):
+        from botocore.exceptions import ClientError
+        return ClientError({"Error": {"Code": "404", "Message": "Not Found"}}, "GetObject")
+
+    def _client_error(self, status=None, code=""):
+        from botocore.exceptions import ClientError
+        response = {"Error": {"Code": code}}
+        if status is not None:
+            response["ResponseMetadata"] = {"HTTPStatusCode": status}
+        return ClientError(response, "HeadObject")
+
+    def test_download_restores_from_the_configured_location(self):
+        client = MagicMock()
+        with patch.object(dbsync, "_client", return_value=client), \
+             patch.object(dbsync, "database_path", return_value=self.db):
+            self.assertTrue(dbsync.download())
+        client.download_file.assert_called_once_with(
+            "pinpoint-db", "db/db.sqlite3", self.db)
+
+    def test_missing_object_is_not_an_error(self):
+        # First deploy: nothing to restore, migrate will create the file.
+        client = MagicMock()
+        client.head_object.side_effect = self._missing_key_error()
+        with patch.object(dbsync, "_client", return_value=client), \
+             patch.object(dbsync, "database_path", return_value=self.db):
+            self.assertFalse(dbsync.download())
+        client.download_file.assert_not_called()
+
+    def test_missing_object_detected_by_status_alone(self):
+        client = MagicMock()
+        client.head_object.side_effect = self._client_error(status=404)
+        with patch.object(dbsync, "_client", return_value=client), \
+             patch.object(dbsync, "database_path", return_value=self.db):
+            self.assertFalse(dbsync.download())
+
+    # --- 403 must never be mistaken for "no database yet" -------------------
+
+    def test_forbidden_refuses_to_start_empty(self):
+        # If the object does exist and this is only a policy problem, starting
+        # empty would upload an empty database over the real one.
+        client = MagicMock()
+        client.head_object.side_effect = self._client_error(status=403, code="AccessDenied")
+        with patch.object(dbsync, "_client", return_value=client), \
+             patch.object(dbsync, "database_path", return_value=self.db):
+            with self.assertRaises(ImproperlyConfigured):
+                dbsync.download()
+        client.download_file.assert_not_called()
+
+    def test_forbidden_error_explains_the_listbucket_trap(self):
+        client = MagicMock()
+        client.head_object.side_effect = self._client_error(status=403, code="Forbidden")
+        with patch.object(dbsync, "_client", return_value=client), \
+             patch.object(dbsync, "database_path", return_value=self.db):
+            with self.assertRaises(ImproperlyConfigured) as ctx:
+                dbsync.download()
+        message = str(ctx.exception)
+        self.assertIn("s3:ListBucket", message)
+        self.assertIn("s3:GetObject", message)
+        self.assertIn("pinpoint-db", message)
+        self.assertIn("db/db.sqlite3", message)
+
+    def test_access_denied_without_a_status_still_refuses(self):
+        client = MagicMock()
+        client.head_object.side_effect = self._client_error(code="AccessDenied")
+        with patch.object(dbsync, "_client", return_value=client), \
+             patch.object(dbsync, "database_path", return_value=self.db):
+            with self.assertRaises(ImproperlyConfigured):
+                dbsync.download()
+
+    def test_other_s3_errors_propagate(self):
+        from botocore.exceptions import ClientError
+        client = MagicMock()
+        client.head_object.side_effect = self._client_error(status=500, code="InternalError")
+        with patch.object(dbsync, "_client", return_value=client), \
+             patch.object(dbsync, "database_path", return_value=self.db):
+            with self.assertRaises(ClientError):
+                dbsync.download()
+
+    def test_upload_sends_a_snapshot_not_the_live_file(self):
+        sqlite_with_rows(self.db)
+        client = MagicMock()
+        with patch.object(dbsync, "_client", return_value=client), \
+             patch.object(dbsync, "database_path", return_value=self.db):
+            dbsync.upload()
+        (sent_path, bucket, key), _ = client.upload_file.call_args
+        self.assertEqual((bucket, key), ("pinpoint-db", "db/db.sqlite3"))
+        self.assertNotEqual(sent_path, self.db)
+
+    def test_upload_removes_its_temporary_snapshot(self):
+        sqlite_with_rows(self.db)
+        client = MagicMock()
+        with patch.object(dbsync, "_client", return_value=client), \
+             patch.object(dbsync, "database_path", return_value=self.db):
+            dbsync.upload()
+        (sent_path, _, _), _ = client.upload_file.call_args
+        self.assertFalse(os.path.exists(sent_path))
+
+
+class DbSyncCommandTest(SimpleTestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        self.marker = os.path.join(self.tmp, "dirty")
+        overrides = override_settings(
+            SQLITE_S3_SYNC=True, SQLITE_S3_BUCKET="b", SQLITE_S3_KEY="k",
+            SQLITE_DIRTY_MARKER=self.marker,
+        )
+        overrides.enable()
+        self.addCleanup(overrides.disable)
+
+    def _run(self, *args):
+        out = io.StringIO()
+        call_command("dbsync", *args, stdout=out)
+        return out.getvalue()
+
+    def test_noop_when_sync_is_not_configured(self):
+        with override_settings(SQLITE_S3_SYNC=False):
+            with patch.object(dbsync, "upload") as upload:
+                output = self._run("--upload")
+        upload.assert_not_called()
+        self.assertIn("not configured", output)
+
+    def test_upload_if_dirty_skips_when_clean(self):
+        # Asserts the behaviour, not the wording: the skip path runs every
+        # interval, so it is deliberately quiet.
+        with patch.object(dbsync, "upload") as upload:
+            self._run("--upload", "--if-dirty")
+        upload.assert_not_called()
+
+    def test_upload_if_dirty_runs_when_dirty(self):
+        dbsync.mark_dirty()
+        with patch.object(dbsync, "upload") as upload:
+            self._run("--upload", "--if-dirty")
+        upload.assert_called_once()
+
+    def test_marker_is_cleared_before_the_upload(self):
+        # Clearing afterwards would discard a write that landed mid-upload.
+        dbsync.mark_dirty()
+        seen = {}
+
+        def record():
+            seen["dirty_during_upload"] = dbsync.is_dirty()
+
+        with patch.object(dbsync, "upload", side_effect=record):
+            self._run("--upload", "--if-dirty")
+        self.assertFalse(seen["dirty_during_upload"])
+        self.assertFalse(dbsync.is_dirty())
+
+    def test_a_write_during_upload_is_not_lost(self):
+        dbsync.mark_dirty()
+        with patch.object(dbsync, "upload", side_effect=lambda: dbsync.mark_dirty()):
+            self._run("--upload", "--if-dirty")
+        # Still dirty, so the next pass uploads that change too.
+        self.assertTrue(dbsync.is_dirty())
+
+    def test_failed_upload_re_marks_for_retry(self):
+        dbsync.mark_dirty()
+        with patch.object(dbsync, "upload", side_effect=RuntimeError("S3 down")):
+            with self.assertRaises(CommandError):
+                self._run("--upload", "--if-dirty")
+        self.assertTrue(dbsync.is_dirty())
+
+    def test_download_reports_a_restore(self):
+        with patch.object(dbsync, "download", return_value=True):
+            self.assertIn("restored", self._run("--download"))
+
+    def test_download_reports_a_fresh_start(self):
+        with patch.object(dbsync, "download", return_value=False):
+            self.assertIn("No database in S3", self._run("--download"))
+
+    def test_download_and_upload_are_mutually_exclusive(self):
+        with self.assertRaises(CommandError):
+            call_command("dbsync", "--download", "--upload")
+
+    def test_one_of_them_is_required(self):
+        with self.assertRaises(CommandError):
+            call_command("dbsync")
+
+
+class DbSyncSignalTest(TestCase):
+    """Writes have to set the marker, including ones outside this app."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        overrides = override_settings(
+            SQLITE_S3_SYNC=True, SQLITE_S3_BUCKET="b",
+            SQLITE_DIRTY_MARKER=os.path.join(self.tmp, "dirty"),
+        )
+        overrides.enable()
+        self.addCleanup(overrides.disable)
+        # ready() already ran at startup with sync disabled, so wire the
+        # receivers the same way it would and unhook them afterwards.
+        dbsync.connect_signals()
+        self.addCleanup(dbsync.disconnect_signals)
+
+    def test_receiver_survives_garbage_collection(self):
+        # Django holds receivers weakly by default, so a closure connected from
+        # ready() would be collected as soon as ready() returned, leaving writes
+        # silently unrecorded.
+        gc.collect()
+        make_route()
+        self.assertTrue(dbsync.is_dirty())
+
+    def test_ready_connects_when_enabled(self):
+        dbsync.disconnect_signals()
+        GameConfig("game", game).ready()
+        self.assertFalse(dbsync.is_dirty())
+        make_route()
+        self.assertTrue(dbsync.is_dirty())
+
+    def test_ready_stays_out_of_the_way_when_disabled(self):
+        dbsync.disconnect_signals()
+        with override_settings(SQLITE_S3_SYNC=False):
+            GameConfig("game", game).ready()
+        make_route()
+        self.assertFalse(dbsync.is_dirty())
+
+    def test_saving_a_model_marks_dirty(self):
+        self.assertFalse(dbsync.is_dirty())
+        make_route()
+        self.assertTrue(dbsync.is_dirty())
+
+    def test_deleting_a_model_marks_dirty(self):
+        route = make_route()
+        dbsync.clear_marker()
+        route.delete()
+        self.assertTrue(dbsync.is_dirty())
+
+    def test_session_writes_mark_dirty(self):
+        # Player progress lives in django.contrib.sessions, not this app, so the
+        # receivers must be connected for every model rather than game's only.
+        route = make_route()
+        make_waypoint(route, order=0, advance_type=Waypoint.BUTTON)
+        make_waypoint(route, order=1, advance_type=Waypoint.BUTTON)
+        dbsync.clear_marker()
+        self.client.post(reverse("play_advance", args=[route.token]))
+        self.assertTrue(dbsync.is_dirty())
+
+    def test_reads_do_not_mark_dirty(self):
+        route = make_route()
+        make_waypoint(route, order=0)
+        dbsync.clear_marker()
+        self.client.get(reverse("route_list"))
+        self.assertFalse(dbsync.is_dirty())
 
 
 # ---------------------------------------------------------------------------
