@@ -3,7 +3,7 @@ import json
 
 import qrcode
 from django.contrib.auth.decorators import login_required
-from django.db import OperationalError, connection
+from django.db import connection
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.template.loader import render_to_string
@@ -21,9 +21,18 @@ def livez(request):
 
 
 def readyz(request):
+    """Report whether the app can actually reach its database.
+
+    Opening a cursor and running a query is deliberate: with CONN_MAX_AGE set,
+    ``connection.ensure_connection()`` returns immediately whenever a connection
+    object exists, without touching the network, so a connection left dead by an
+    RDS failover or reboot would still look healthy. Django's connection health
+    check runs in ``_cursor()``, and the query proves a full round trip.
+    """
     try:
-        connection.ensure_connection()
-    except OperationalError:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT 1")
+    except Exception:  # a readiness probe must answer 503, never 500
         return JsonResponse({"status": "unavailable"}, status=503)
     return JsonResponse({"status": "ok"})
 

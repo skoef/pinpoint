@@ -12,6 +12,6 @@ staticfiles
 .pre-commit-config.yaml
 CLAUDE.md
 README.md
-docker-compose.yml
+Dockerrun.aws.json
 Docker*
 media/

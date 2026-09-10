@@ -6,6 +6,13 @@ django-storages[s3]
 gunicorn==23.0.0
 packaging==26.3
 pillow==11.3.0
+# psycopg 3 (Django 4.2 requires >=3.1.8), the [c] flavour built against libpq.
+# Not [binary]: those wheels are manylinux-only, so they do not install on the
+# musl-based Alpine image. Plain [pure-python] does not work there either -- it
+# locates libpq with ctypes.util.find_library, which needs ldconfig/gcc that
+# Alpine lacks. The Dockerfile therefore compiles this against postgresql-dev
+# and throws the toolchain away afterwards.
+psycopg[c]>=3.1.8
 qrcode==8.2
 sqlparse==0.5.5
 typing_extensions==4.16.0

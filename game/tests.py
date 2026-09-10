@@ -1,10 +1,16 @@
 import io
 import json
+from pathlib import Path
+from unittest.mock import patch
 
 from django.contrib.auth.models import User
+from django.core.exceptions import ImproperlyConfigured
 from django.core.files.base import ContentFile
-from django.test import TestCase, override_settings
+from django.db import OperationalError
+from django.test import SimpleTestCase, TestCase, override_settings
 from django.urls import reverse
+
+from pinpoint.dbconfig import POSTGRES_ENGINE, SQLITE_ENGINE, database_config
 
 from .models import Route, Waypoint
 
@@ -46,6 +52,116 @@ def post_form(client, url, data, files=None):
 
 
 # ---------------------------------------------------------------------------
+# Database configuration
+# ---------------------------------------------------------------------------
+
+class DatabaseConfigTest(SimpleTestCase):
+    """database_config() takes an explicit env mapping, so these stay hermetic."""
+
+    FULL = {
+        "DB_HOST": "pinpoint.abc123.eu-west-1.rds.amazonaws.com",
+        "DB_NAME": "pinpoint",
+        "DB_USER": "pinpoint_app",
+        "DB_PASSWORD": "s3cret",
+    }
+
+    # --- choosing a backend -------------------------------------------------
+
+    def test_sqlite_when_no_host_configured(self):
+        config = database_config(env={}, base_dir="/srv/app")
+        self.assertEqual(config["ENGINE"], SQLITE_ENGINE)
+        self.assertEqual(config["NAME"], Path("/srv/app/db.sqlite3"))
+
+    def test_blank_host_is_treated_as_unset(self):
+        config = database_config(env={"DB_HOST": "   "}, base_dir="/srv/app")
+        self.assertEqual(config["ENGINE"], SQLITE_ENGINE)
+
+    def test_postgres_when_host_configured(self):
+        config = database_config(env=self.FULL)
+        self.assertEqual(config["ENGINE"], POSTGRES_ENGINE)
+        self.assertEqual(config["NAME"], "pinpoint")
+        self.assertEqual(config["USER"], "pinpoint_app")
+        self.assertEqual(config["PASSWORD"], "s3cret")
+        self.assertEqual(config["HOST"], self.FULL["DB_HOST"])
+
+    def test_port_defaults_to_5432(self):
+        self.assertEqual(database_config(env=self.FULL)["PORT"], "5432")
+
+    def test_port_can_be_overridden(self):
+        config = database_config(env={**self.FULL, "DB_PORT": "6432"})
+        self.assertEqual(config["PORT"], "6432")
+
+    # --- Elastic Beanstalk's RDS_* variables --------------------------------
+
+    def test_rds_variables_are_accepted(self):
+        config = database_config(env={
+            "RDS_HOSTNAME": "eb.rds.amazonaws.com",
+            "RDS_DB_NAME": "ebdb",
+            "RDS_USERNAME": "ebroot",
+            "RDS_PASSWORD": "ebpw",
+            "RDS_PORT": "5433",
+        })
+        self.assertEqual(config["ENGINE"], POSTGRES_ENGINE)
+        self.assertEqual(config["HOST"], "eb.rds.amazonaws.com")
+        self.assertEqual(config["NAME"], "ebdb")
+        self.assertEqual(config["USER"], "ebroot")
+        self.assertEqual(config["PORT"], "5433")
+
+    def test_db_variables_win_over_rds(self):
+        config = database_config(env={**self.FULL, "RDS_HOSTNAME": "wrong",
+                                      "RDS_DB_NAME": "wrong", "RDS_USERNAME": "wrong"})
+        self.assertEqual(config["HOST"], self.FULL["DB_HOST"])
+        self.assertEqual(config["NAME"], "pinpoint")
+        self.assertEqual(config["USER"], "pinpoint_app")
+
+    # --- refusing to half-configure -----------------------------------------
+
+    def test_host_without_credentials_raises(self):
+        with self.assertRaises(ImproperlyConfigured):
+            database_config(env={"DB_HOST": "rds.example.com"})
+
+    def test_error_names_every_missing_variable(self):
+        with self.assertRaises(ImproperlyConfigured) as ctx:
+            database_config(env={"DB_HOST": "rds.example.com", "DB_NAME": "pinpoint"})
+        message = str(ctx.exception)
+        self.assertIn("DB_USER", message)
+        self.assertIn("DB_PASSWORD", message)
+        self.assertNotIn("DB_NAME", message)
+
+    def test_blank_password_is_missing(self):
+        with self.assertRaises(ImproperlyConfigured):
+            database_config(env={**self.FULL, "DB_PASSWORD": ""})
+
+    # --- connection behaviour that matters against RDS ----------------------
+
+    def test_tls_is_required_by_default(self):
+        self.assertEqual(database_config(env=self.FULL)["OPTIONS"]["sslmode"], "require")
+
+    def test_sslmode_can_be_tightened_or_relaxed(self):
+        for mode in ("verify-full", "disable"):
+            config = database_config(env={**self.FULL, "DB_SSLMODE": mode})
+            self.assertEqual(config["OPTIONS"]["sslmode"], mode)
+
+    def test_connections_are_reused_with_health_checks(self):
+        config = database_config(env=self.FULL)
+        self.assertEqual(config["CONN_MAX_AGE"], 600)
+        self.assertIs(config["CONN_HEALTH_CHECKS"], True)
+
+    def test_conn_max_age_is_configurable(self):
+        config = database_config(env={**self.FULL, "DB_CONN_MAX_AGE": "0"})
+        self.assertEqual(config["CONN_MAX_AGE"], 0)
+
+    def test_connect_timeout_is_bounded_by_default(self):
+        self.assertEqual(database_config(env=self.FULL)["OPTIONS"]["connect_timeout"], 5)
+
+    def test_sqlite_needs_no_credentials(self):
+        # Local development and CI must work with an empty environment.
+        config = database_config(env={}, base_dir=".")
+        self.assertNotIn("USER", config)
+        self.assertNotIn("OPTIONS", config)
+
+
+# ---------------------------------------------------------------------------
 # Health checks
 # ---------------------------------------------------------------------------
 
@@ -59,6 +175,28 @@ class HealthCheckTest(TestCase):
         response = self.client.get(reverse("readyz"))
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), {"status": "ok"})
+
+    def test_readyz_returns_503_when_db_unavailable(self):
+        with patch("game.views.connection.cursor",
+                   side_effect=OperationalError("connection refused")):
+            response = self.client.get(reverse("readyz"))
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.json(), {"status": "unavailable"})
+
+    def test_readyz_runs_a_query_not_just_ensure_connection(self):
+        # With CONN_MAX_AGE set, ensure_connection() does no I/O when a (possibly
+        # dead) connection object exists, so it cannot detect an unreachable DB.
+        with patch("game.views.connection.cursor") as cursor:
+            self.client.get(reverse("readyz"))
+        cursor.assert_called_once()
+        cursor.return_value.__enter__.return_value.execute.assert_called_once_with("SELECT 1")
+
+    def test_livez_does_not_touch_the_database(self):
+        # Liveness must stay up even when the database is down.
+        with patch("game.views.connection.cursor",
+                   side_effect=OperationalError("connection refused")):
+            response = self.client.get(reverse("livez"))
+        self.assertEqual(response.status_code, 200)
 
 
 # ---------------------------------------------------------------------------

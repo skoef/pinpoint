@@ -13,6 +13,8 @@ https://docs.djangoproject.com/en/4.2/ref/settings/
 import os
 from pathlib import Path
 
+from .dbconfig import database_config
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 SECRET_KEY = os.environ.get(
@@ -75,12 +77,9 @@ WSGI_APPLICATION = "pinpoint.wsgi.application"
 # Database
 # https://docs.djangoproject.com/en/4.2/ref/settings/#databases
 
-DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.sqlite3",
-        "NAME": BASE_DIR / "db.sqlite3",
-    }
-}
+# Postgres (RDS) when a database host is configured, SQLite otherwise.
+# See pinpoint/dbconfig.py for the environment variables involved.
+DATABASES = {"default": database_config(base_dir=BASE_DIR)}
 
 
 # Password validation

@@ -47,7 +47,36 @@ python manage.py runserver
 
 Open [http://localhost:8000](http://localhost:8000) and log in with the account you just created.
 
-Uploaded images are stored under `media/` by default. To use S3 instead, set `USE_S3=true` and the required `AWS_*` environment variables (see `docker-compose.yml` for the full list).
+With no configuration the app uses SQLite and stores uploaded images under `media/`, so nothing above needs environment variables.
+
+## Configuration
+
+Everything is driven by environment variables. All are optional; leaving them unset gives the local SQLite + filesystem setup above.
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `SECRET_KEY` | insecure dev key | **Set this in production.** |
+| `DEBUG` | `true` | Set to `false` in production. |
+| `ALLOWED_HOSTS` | `localhost 127.0.0.1` | Space-separated hostnames. |
+| `CSRF_TRUSTED_ORIGINS` | empty | Space-separated origins, e.g. `https://pinpoint.example.com`. |
+| `DB_HOST` | unset → SQLite | Set to an RDS endpoint to switch to Postgres. |
+| `DB_NAME` / `DB_USER` / `DB_PASSWORD` | — | Required once `DB_HOST` is set. |
+| `DB_PORT` | `5432` | |
+| `DB_SSLMODE` | `require` | Use `verify-full` with `sslrootcert` for full certificate validation. |
+| `DB_CONN_MAX_AGE` | `600` | Seconds to reuse a connection. `0` disables pooling. |
+| `DB_CONNECT_TIMEOUT` | `5` | Seconds before giving up on connecting. |
+| `USE_S3` | `false` | `true` stores waypoint images in S3 instead of `media/`. |
+| `AWS_STORAGE_BUCKET_NAME` | — | Required when `USE_S3=true`. |
+| `AWS_S3_REGION_NAME` | unset | |
+| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | unset | Omit to use the instance's IAM role. |
+
+### Using Postgres (RDS)
+
+Setting `DB_HOST` switches the app from SQLite to Postgres; `DB_NAME`, `DB_USER` and `DB_PASSWORD` then become mandatory and the app refuses to start without them rather than half-connecting. TLS is required by default.
+
+If you attach an RDS instance to an Elastic Beanstalk environment, Beanstalk injects `RDS_HOSTNAME`, `RDS_PORT`, `RDS_DB_NAME`, `RDS_USERNAME` and `RDS_PASSWORD`. Those are picked up automatically, so no extra configuration is needed in that case. Explicit `DB_*` variables take precedence when both are present.
+
+The container runs `manage.py migrate` on startup, so schema changes are applied on deploy.
 
 ## Running tests
 
@@ -55,9 +84,11 @@ Uploaded images are stored under `media/` by default. To use S3 instead, set `US
 python manage.py test game
 ```
 
+The suite runs on SQLite by default. To run it against Postgres, export the `DB_*` variables first.
+
 ## Deployment
 
-The app ships as a Docker image. `docker-compose.yml` is the entrypoint for production (tested on AWS Elastic Beanstalk single-container Docker). Environment variables are passed in via the host; see `docker-compose.yml` for the full list.
+The app ships as a Docker image, deployed to AWS Elastic Beanstalk as a single-container Docker application via `Dockerrun.aws.json`. Environment variables are configured on the Beanstalk environment and injected into the container — `Dockerrun.aws.json` version 1 has no `environment` section, so the table above is the reference for what to set.
 
 To build and push a new image:
 
@@ -66,4 +97,4 @@ docker build -t docker.io/rschoof/pinpoint:vX.Y.Z .
 docker push docker.io/rschoof/pinpoint:vX.Y.Z
 ```
 
-Version bumps are managed with [Commitizen](https://commitizen-tools.github.io/commitizen/) (`cz bump`), which updates the version in `docker-compose.yml` and generates a changelog.
+Version bumps are managed with [Commitizen](https://commitizen-tools.github.io/commitizen/) (`cz bump`), which updates the image tag in `Dockerrun.aws.json` and generates a changelog.
