@@ -4,7 +4,13 @@ commitizen:
   tag_format: v$version
   version_scheme: semver
   version_provider: commitizen
+  # version_provider: commitizen keeps the current version here, so this key is
+  # required -- without it `cz` reports "No project information in this project".
+  version: 0.0.0
   update_changelog_on_bump: true
   major_version_zero: true
-  update_files:
-    - docker-compose.yml:v$current_version:v$new_version
+  # "path:regex" -- the regex selects which lines to touch, then the current
+  # version string is replaced on those lines. The literal "v" in the image tag
+  # is left alone because the stored version is unprefixed (0.0.0, not v0.0.0).
+  version_files:
+    - Dockerrun.aws.json:Name
