@@ -167,4 +167,4 @@ docker build -t docker.io/rschoof/pinpoint:vX.Y.Z .
 docker push docker.io/rschoof/pinpoint:vX.Y.Z
 ```
 
-Version bumps are managed with [Commitizen](https://commitizen-tools.github.io/commitizen/) (`cz bump`), which updates the image tag in `Dockerrun.aws.json` and generates a changelog.
+Version bumps are managed with [Commitizen](https://commitizen-tools.github.io/commitizen/) (`cz bump`), which generates a changelog and rewrites the version in both `Dockerrun.aws.json` (the image tag) and `pinpoint/__init__.py` (`__version__`, shown in the footer of the login and route start screens). Both are listed under `version_files` in `.cz.yaml`; add any new place the version appears there too, or it will silently go stale. `cz bump --check-consistency` fails loudly if one of them drifts.

@@ -2,12 +2,14 @@ import gc
 import io
 import json
 import os
+import re
 import shutil
 import sqlite3
 import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+from django.conf import settings
 from django.contrib.auth.models import User
 from django.core.exceptions import ImproperlyConfigured
 from django.core.files.base import ContentFile
@@ -18,6 +20,8 @@ from django.db.models.signals import m2m_changed, post_delete, post_save
 from django.test import SimpleTestCase, TestCase, override_settings
 from django.urls import reverse
 
+import pinpoint
+from pinpoint.context_processors import version as version_context
 from pinpoint.dbconfig import POSTGRES_ENGINE, SQLITE_ENGINE, database_config
 
 import game
@@ -60,6 +64,65 @@ def post_form(client, url, data, files=None):
     if files:
         payload.update(files)
     return client.post(url, payload)
+
+
+# ---------------------------------------------------------------------------
+# Version display
+# ---------------------------------------------------------------------------
+
+class VersionTest(TestCase):
+    """The version is shown on the login and route start screens only."""
+
+    def test_login_screen_shows_the_version(self):
+        html = self.client.get(reverse("login")).content.decode()
+        self.assertIn(f"v{pinpoint.__version__}", html)
+
+    def test_start_screen_shows_the_version(self):
+        route = make_route()
+        make_waypoint(route, order=0)
+        html = self.client.get(reverse("play", args=[route.token])).content.decode()
+        self.assertIn(f"v{pinpoint.__version__}", html)
+        self.assertIn('id="version-footer"', html)
+
+    def test_play_screen_does_not_show_the_version(self):
+        route = make_route()
+        make_waypoint(route, order=0)
+        html = self.client.get(reverse("play_game", args=[route.token])).content.decode()
+        self.assertNotIn('id="version-footer"', html)
+        self.assertNotIn(f"v{pinpoint.__version__}", html)
+
+    def test_start_tap_hides_the_footer(self):
+        # The document survives the whole route, so the footer has to be hidden
+        # rather than merely absent from the next render.
+        route = make_route()
+        make_waypoint(route, order=0)
+        html = self.client.get(reverse("play", args=[route.token])).content.decode()
+        self.assertIn('document.getElementById("version-footer")', html)
+
+    def test_available_to_any_template_via_context_processor(self):
+        # Django's own LoginView renders the login page, so the value cannot come
+        # from view context.
+        self.assertIn("pinpoint.context_processors.version",
+                      settings.TEMPLATES[0]["OPTIONS"]["context_processors"])
+        self.assertEqual(version_context(None), {"app_version": pinpoint.__version__})
+
+
+class VersionBumpWiringTest(SimpleTestCase):
+    """cz bump has to move __version__ along with everything else."""
+
+    CZ_CONFIG = Path(settings.BASE_DIR) / ".cz.yaml"
+
+    def _cz_text(self):
+        return self.CZ_CONFIG.read_text(encoding="utf-8")
+
+    def test_version_file_is_registered_with_commitizen(self):
+        self.assertIn("pinpoint/__init__.py:__version__", self._cz_text())
+
+    def test_code_version_matches_commitizen(self):
+        # Drift here would show a stale version in the footer after a release.
+        match = re.search(r"^\s*version:\s*(\S+)\s*$", self._cz_text(), re.M)
+        self.assertIsNotNone(match, "no version: key in .cz.yaml")
+        self.assertEqual(match.group(1), pinpoint.__version__)
 
 
 # ---------------------------------------------------------------------------
