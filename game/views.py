@@ -2,6 +2,7 @@ import io
 import json
 
 import qrcode
+from django.conf import settings
 from django.contrib.auth.decorators import login_required
 from django.db import connection
 from django.http import HttpResponse, JsonResponse
@@ -78,6 +79,9 @@ def route_edit(request, pk):
         "waypoints": waypoints,
         "emoji_choices": Route.COMPLETION_EMOJI_CHOICES,
         "default_proximity": Waypoint.DEFAULT_PROXIMITY_METERS,
+        "map_tile_url": settings.MAP_TILE_URL,
+        "map_tile_attribution": settings.MAP_TILE_ATTRIBUTION,
+        "map_tile_max_zoom": settings.MAP_TILE_MAX_ZOOM,
     })
 
 

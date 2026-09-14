@@ -207,8 +207,12 @@ let pendingLatLng = null;
 
 // --- Map ---
 const map = L.map("map").setView([52.3, 5.3], 7);
-L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
-  attribution: "© OpenStreetMap contributors"
+// Tile source comes from settings so a blocked or rate-limited provider can be
+// swapped by environment variable instead of a code change. escapejs, not raw:
+// a provider URL carries an API key and the attribution carries markup.
+L.tileLayer("{{ map_tile_url|escapejs }}", {
+  attribution: "{{ map_tile_attribution|escapejs }}",
+  maxZoom: {{ map_tile_max_zoom }},
 }).addTo(map);
 
 const markers = {};

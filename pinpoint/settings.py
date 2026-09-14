@@ -142,6 +142,20 @@ if not DEBUG:
     # collectstatic, and requiring it locally would break `runserver`.
     STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
 
+# Map tiles for the route editor.
+#
+# The default is OpenStreetMap's public tile server, which is fine for
+# development but is a volunteer-funded service whose usage policy is not aimed
+# at applications -- it blocks clients it considers too heavy, with no warning
+# and nothing you can do from the app. Keeping these configurable means moving to
+# a provider with an API key is an environment change, not a redeploy.
+MAP_TILE_URL = os.environ.get(
+    "MAP_TILE_URL", "https://tile.openstreetmap.org/{z}/{x}/{y}.png")
+MAP_TILE_ATTRIBUTION = os.environ.get(
+    "MAP_TILE_ATTRIBUTION", "© OpenStreetMap contributors")
+# Providers differ here, so it has to be swappable alongside the URL.
+MAP_TILE_MAX_ZOOM = int(os.environ.get("MAP_TILE_MAX_ZOOM", "19"))
+
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
 

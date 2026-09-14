@@ -71,11 +71,28 @@ Everything is driven by environment variables. All are optional; leaving them un
 | `SQLITE_S3_KEY` | `db/db.sqlite3` | Object key for the database. |
 | `SQLITE_SYNC_INTERVAL` | `30` | Seconds between upload checks. |
 | `SQLITE_DIRTY_MARKER` | `/tmp/pinpoint-db-dirty` | File touched after each write. |
+| `MAP_TILE_URL` | OpenStreetMap | Tile URL template for the route editor's map. See below. |
+| `MAP_TILE_ATTRIBUTION` | `© OpenStreetMap contributors` | Shown on the map; HTML links are allowed. |
+| `MAP_TILE_MAX_ZOOM` | `19` | Deepest zoom the provider serves. |
 | `USE_S3` | `false` | `true` stores waypoint images in S3 instead of `media/`. |
 | `AWS_STORAGE_BUCKET_NAME` | — | Required when `USE_S3=true`. |
 | `AWS_S3_REGION_NAME` | unset | |
 | `AWS_S3_ENDPOINT_URL` | unset | Only for S3-compatible stores (MinIO); leave unset for real S3. |
 | `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | unset | Omit to use the instance's IAM role. |
+
+### Map tiles
+
+The route editor's map defaults to OpenStreetMap's public tile server. That is fine for development, but it is a volunteer-funded service whose [tile usage policy](https://operations.osmfoundation.org/policies/tiles/) is not aimed at applications: it blocks clients it considers too heavy, without warning, and the app then shows a grey map linking to [Blocked tiles](https://wiki.openstreetmap.org/wiki/Blocked_tiles).
+
+For anything you actually run a hunt on, point these at a provider with an account — MapTiler, Stadia Maps and Thunderforest all have free tiers:
+
+```ini
+MAP_TILE_URL=https://api.maptiler.com/maps/streets-v2/{z}/{x}/{y}.png?key=YOUR_KEY
+MAP_TILE_ATTRIBUTION=<a href="https://www.maptiler.com/copyright/">MapTiler</a> <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>
+MAP_TILE_MAX_ZOOM=20
+```
+
+The `{z}`, `{x}` and `{y}` placeholders are filled in by Leaflet, so leave them as-is. Because this is configuration rather than code, a provider that starts refusing traffic can be swapped without a redeploy.
 
 ### Waypoint images in S3
 

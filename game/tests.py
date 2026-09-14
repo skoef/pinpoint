@@ -1710,6 +1710,73 @@ class ImageUrlTest(GMTestCase):
                         data["image_url"])
 
 
+class MapTileSettingsTest(GMTestCase):
+    """The tile provider is swappable, because OSM's public server can block us."""
+
+    def setUp(self):
+        super().setUp()
+        self.route = make_route(owner=self.user)
+        make_waypoint(self.route, order=0)
+
+    def _editor(self):
+        return self.client.get(reverse("route_edit", args=[self.route.pk])).content.decode()
+
+    @staticmethod
+    def _js_string(html, pattern):
+        """The value a browser ends up with, not the escaped source.
+
+        escapejs encodes rather more than quotes -- "=" becomes \\u003D too -- so
+        comparing the raw markup would test the escaping instead of the result.
+        Extracting with [^"]* also means an unescaped quote would truncate the
+        match and fail the comparison, which is the property worth guarding.
+        """
+        match = re.search(pattern + r'"([^"]*)"', html)
+        assert match, f"no match for {pattern!r}"
+        return re.sub(r"\\u([0-9a-fA-F]{4})",
+                      lambda m: chr(int(m.group(1), 16)), match.group(1))
+
+    def _tile_url(self, html):
+        return self._js_string(html, r"L\.tileLayer\(")
+
+    def _attribution(self, html):
+        return self._js_string(html, r"attribution: ")
+
+    def test_defaults_to_openstreetmap(self):
+        html = self._editor()
+        self.assertEqual(self._tile_url(html),
+                         "https://tile.openstreetmap.org/{z}/{x}/{y}.png")
+        self.assertEqual(self._attribution(html), "© OpenStreetMap contributors")
+
+    @override_settings(
+        MAP_TILE_URL="https://api.maptiler.com/maps/streets/{z}/{x}/{y}.png?key=abc123",
+        MAP_TILE_ATTRIBUTION="© MapTiler",
+        MAP_TILE_MAX_ZOOM=20,
+    )
+    def test_a_custom_provider_replaces_the_default(self):
+        html = self._editor()
+        self.assertEqual(self._tile_url(html), settings.MAP_TILE_URL)
+        self.assertEqual(self._attribution(html), "© MapTiler")
+        self.assertIn("maxZoom: 20,", html)
+        self.assertNotIn("tile.openstreetmap.org", html)
+
+    @override_settings(MAP_TILE_ATTRIBUTION='<a href="https://maptiler.com/">MapTiler</a>')
+    def test_attribution_reaches_leaflet_as_markup(self):
+        # Leaflet inserts attribution as HTML, and providers require a link.
+        self.assertEqual(self._attribution(self._editor()),
+                         '<a href="https://maptiler.com/">MapTiler</a>')
+
+    @override_settings(MAP_TILE_URL='https://evil/{z}.png?k="+alert(1)+"')
+    def test_a_quote_in_the_url_cannot_break_out_of_the_string(self):
+        html = self._editor()
+        # Recovered intact, so the quotes stayed inside the JS string literal.
+        self.assertEqual(self._tile_url(html), settings.MAP_TILE_URL)
+        self.assertNotIn('?k="+alert(1)+"', html)
+
+    def test_max_zoom_is_an_int(self):
+        # Interpolated bare into JS, so it must never be a string.
+        self.assertIsInstance(settings.MAP_TILE_MAX_ZOOM, int)
+
+
 class TemplateLeakTest(TestCase):
     """Django's {# #} is single-line only; a multi-line one renders literally.
 
