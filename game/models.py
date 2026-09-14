@@ -33,6 +33,36 @@ class Route(models.Model):
         return self.completion_emoji or self.DEFAULT_COMPLETION_EMOJI
 
 
+class Participant(models.Model):
+    """One team playing a route.
+
+    Progress lives here rather than in the player's session, because a game
+    master has no way to reach into another browser's session -- which is what
+    being able to skip a stuck team requires. The session only holds this row's
+    id; see ``_current_participant`` in ``views.py``.
+    """
+
+    route = models.ForeignKey(Route, on_delete=models.CASCADE, related_name="participants")
+    name = models.CharField(max_length=100, blank=True)
+    current_index = models.PositiveIntegerField(default=0)
+    started_at = models.DateTimeField(auto_now_add=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+    # How often the game master had to move this team on, for a bit of context
+    # when their progress looks surprising.
+    skips = models.PositiveIntegerField(default=0)
+    last_skip_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["started_at"]
+
+    def __str__(self):
+        return f"{self.name or 'unnamed'} — {self.route.name}"
+
+    @property
+    def is_finished(self):
+        return self.finished_at is not None
+
+
 def waypoint_image_path(instance, filename):
     """Group a route's waypoint images under one prefix, so everything belonging
     to a route can be found (and dropped) in the bucket in one go.

@@ -28,6 +28,7 @@
     </div>
     <div class="d-flex gap-2 flex-shrink-0">
       <a href="{% url 'route_edit' route.pk %}" class="btn btn-sm btn-outline-secondary">{% trans "Edit" %}</a>
+      <a href="{% url 'participant_list' route.pk %}" class="btn btn-sm btn-outline-primary">{% trans "Teams" %}</a>
       <a href="{% url 'route_qr' route.pk %}" target="_blank" class="btn btn-sm btn-outline-dark">{% trans "QR" %}</a>
       <a href="{% url 'play' route.token %}" target="_blank" class="btn btn-sm btn-outline-success">{% trans "Play" %}</a>
 

@@ -65,6 +65,15 @@
 
     <form id="start-form" method="post" action="{% url 'play_start' token %}">
       {% csrf_token %}
+      <div class="mb-3 text-start">
+        <label class="form-label" for="team-name" style="color:#8b949e;font-size:0.85rem">
+          {% trans "Team name" %}
+        </label>
+        <input type="text" id="team-name" name="name" maxlength="100" required
+               class="form-control" autocomplete="off"
+               placeholder="{% trans 'e.g. The Explorers' %}"
+               style="background:#0d1117;border-color:#30363d;color:#f0f6fc">
+      </div>
       <button type="submit" class="btn btn-primary btn-lg w-100">{% trans "Start" %}</button>
     </form>
   </div>
@@ -77,6 +86,11 @@
   <div id="play-screen" class="text-center px-3"
        style="max-width:420px;width:100%{% if not started %};display:none{% endif %}">
     <h1 class="h5 mb-1">{{ route.name }}</h1>
+    {% comment %}
+    Outside #waypoint-panel so the fragment swap that follows a game master's
+    skip does not immediately wipe the explanation for it.
+    {% endcomment %}
+    <div id="gm-notice" class="alert alert-info py-2 small mt-2 mb-0" style="display:none"></div>
     <div id="waypoint-panel">
       {% if started %}{% include "game/_play_waypoint.html" %}{% endif %}
     </div>
@@ -90,11 +104,14 @@
     let TARGET_LNG = {% if started %}{{ current.lng }}{% else %}null{% endif %};
     let ADVANCE_TYPE = {% if started %}"{{ current.advance_type }}"{% else %}null{% endif %};
     let PROXIMITY_M = {% if started %}{{ current.proximity_meters }}{% else %}0{% endif %};
+    let CURRENT_INDEX = {% if started %}{{ current_index }}{% else %}null{% endif %};
 
     const ANSWER_ERROR = {{ answer_error|yesno:"true,false" }};
     const START_URL = "{% url 'play_start' token %}";
     const ADVANCE_URL = "{% url 'play_advance' token %}";
     const PLAY_URL = "{% url 'play_game' token %}";
+    const STATE_URL = "{% url 'play_state' token %}";
+    const POLL_MS = 15000;
     const CSRF = "{{ csrf_token }}";
     const panel = document.getElementById("waypoint-panel");
 
@@ -111,7 +128,9 @@
     {% trans "Get within {meters} m to continue ({distance} m away)" as str_get_within_away %}
     {% trans "Get within {meters} m to continue" as str_get_within %}
     {% trans "Improving accuracy…" as str_improving %}
+    {% trans "The game master moved you on to the next waypoint." as str_moved_on %}
     const I18N = {
+      movedOn:       "{{ str_moved_on|escapejs }}",
       accuracy:      "{{ str_accuracy|escapejs }}",
       locationFailed:"{{ str_loc_failed|escapejs }}",
       locationDenied:"{{ str_loc_denied|escapejs }}",
@@ -242,11 +261,13 @@
     // --- Moving between waypoints without a page reload ---------------------
     // The server stays authoritative for progress; it answers with a rendered
     // fragment for the next waypoint, which we swap into the panel.
-    function applyTarget(wp) {
+    function applyTarget(data) {
+      const wp = data.waypoint;
       TARGET_LAT = wp.lat;
       TARGET_LNG = wp.lng;
       ADVANCE_TYPE = wp.advance_type;
       PROXIMITY_M = wp.proximity_meters;
+      CURRENT_INDEX = data.number - 1;
       arrived = false;
       advanced = false;
     }
@@ -271,7 +292,7 @@
           return;
         }
         panel.innerHTML = data.html;
-        applyTarget(data.waypoint);
+        applyTarget(data);
         started = true;
         document.getElementById("intro-card").style.display = "none";
         const footer = document.getElementById("version-footer");
@@ -300,7 +321,8 @@
         panel.innerHTML = data.html;
 
         if (data.status === "advanced") {
-          applyTarget(data.waypoint);
+          applyTarget(data);
+          hideNotice();  // their own progress supersedes any skip message
         } else {
           // Wrong answer: still standing at the same waypoint.
           arrived = true;
@@ -314,6 +336,48 @@
         panel.classList.remove("busy");
       }
     }
+
+    // --- Being moved on by the game master --------------------------------
+    // Nothing else talks to the server while a team walks, so a skip is only
+    // noticed by asking. The endpoint is read-only, and answers "unchanged" for
+    // the common case so this stays cheap.
+    function showNotice(message) {
+      const el = document.getElementById("gm-notice");
+      if (!el) return;
+      el.textContent = message;
+      el.style.display = "block";
+    }
+
+    function hideNotice() {
+      const el = document.getElementById("gm-notice");
+      if (el) el.style.display = "none";
+    }
+
+    async function pollState() {
+      if (!started || busy || CURRENT_INDEX === null) return;
+      try {
+        const res = await fetch(`${STATE_URL}?index=${CURRENT_INDEX}`, {
+          headers: {"X-Requested-With": "XMLHttpRequest"},
+        });
+        if (!res.ok) return;  // not our route, or no team yet -- nothing to do
+        const data = await res.json();
+
+        if (data.status === "finished") {
+          window.location.href = PLAY_URL;
+          return;
+        }
+        if (data.status !== "moved") return;
+
+        panel.innerHTML = data.html;
+        applyTarget(data);
+        applyPendingStatus();
+        showNotice(I18N.movedOn);
+      } catch (err) {
+        // Offline or a blip: try again on the next tick.
+      }
+    }
+
+    setInterval(pollState, POLL_MS);
 
     const startForm = document.getElementById("start-form");
     if (startForm) {

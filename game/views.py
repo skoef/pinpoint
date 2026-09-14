@@ -7,9 +7,10 @@ from django.db import connection
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.template.loader import render_to_string
+from django.utils import timezone
 from django.views.decorators.http import require_POST
 
-from .models import Route, Waypoint
+from .models import Participant, Route, Waypoint
 
 
 # ---------------------------------------------------------------------------
@@ -96,6 +97,57 @@ def route_delete(request, pk):
     if not route.is_active:
         route.delete()
     return redirect("route_list")
+
+
+def _participant_json(participant, total):
+    return {
+        "id": participant.pk,
+        "name": participant.name,
+        "number": min(participant.current_index + 1, total) if total else 0,
+        "total": total,
+        "finished": participant.is_finished,
+        "started_at": participant.started_at.isoformat(),
+        "skips": participant.skips,
+    }
+
+
+@login_required
+def participant_list(request, pk):
+    """Who is playing this route and how far they have got.
+
+    Content-negotiates like play_advance: JSON for the page's poll, HTML
+    otherwise.
+    """
+    route = get_object_or_404(Route, pk=pk, owner=request.user)
+    total = route.waypoints.count()
+    participants = route.participants.all()
+
+    if _wants_fragment(request):
+        return JsonResponse({
+            "participants": [_participant_json(p, total) for p in participants],
+        })
+
+    return render(request, "game/participant_list.html", {
+        "route": route,
+        "participants": participants,
+        "total": total,
+    })
+
+
+@login_required
+@require_POST
+def participant_skip(request, pk):
+    """Move a stuck team on by one waypoint."""
+    participant = get_object_or_404(Participant, pk=pk, route__owner=request.user)
+    total = participant.route.waypoints.count()
+
+    if participant.current_index < total:
+        participant.skips += 1
+        participant.last_skip_at = timezone.now()
+        participant.save(update_fields=["skips", "last_skip_at"])
+        _set_progress(participant, participant.current_index + 1, total)
+
+    return JsonResponse(_participant_json(participant, total))
 
 
 @login_required
@@ -215,10 +267,64 @@ def play_intro(request, token):
     })
 
 
+def _participant_key(route):
+    return f"route_{route.pk}_participant"
+
+
+def _default_team_name(route):
+    return f"Team {route.participants.count() + 1}"
+
+
+def _current_participant(request, route, create=True):
+    """The team playing this route in this browser.
+
+    ``create=False`` for read-only endpoints: the polling view must not write,
+    or every poll marks the database dirty and triggers an S3 upload.
+    """
+    key = _participant_key(route)
+    pk = request.session.get(key)
+    if pk:
+        participant = Participant.objects.filter(pk=pk, route=route).first()
+        if participant:
+            return participant
+
+    if not create:
+        return None
+
+    # Sessions from before participants existed kept the index directly. Carry it
+    # over rather than sending a team that is mid-route back to the start.
+    legacy_index = request.session.get(f"route_{route.pk}_waypoint", 0)
+    participant = Participant.objects.create(
+        route=route,
+        name=_default_team_name(route),
+        current_index=legacy_index,
+    )
+    request.session[key] = participant.pk
+    return participant
+
+
+def _set_progress(participant, index, total):
+    """Move a team to ``index``, marking them finished if that is past the end."""
+    participant.current_index = index
+    if index >= total:
+        participant.finished_at = participant.finished_at or timezone.now()
+    else:
+        participant.finished_at = None
+    participant.save(update_fields=["current_index", "finished_at"])
+
+
 @require_POST
 def play_start(request, token):
     route = get_object_or_404(Route, token=token)
-    request.session[f"route_{route.pk}_waypoint"] = 0
+
+    # Reuse the browser's existing team on a restart, so the game master's list
+    # does not fill up with abandoned duplicates.
+    participant = _current_participant(request, route)
+    name = request.POST.get("name", "").strip()
+    participant.name = name or participant.name or _default_team_name(route)
+    participant.current_index = 0
+    participant.finished_at = None
+    participant.save(update_fields=["name", "current_index", "finished_at"])
 
     if _wants_fragment(request):
         waypoints = list(route.get_ordered_waypoints())
@@ -271,8 +377,8 @@ def play(request, token):
     if not waypoints:
         return render(request, "game/play_empty.html", {"route": route})
 
-    session_key = f"route_{route.pk}_waypoint"
-    current_index = request.session.get(session_key, 0)
+    participant = _current_participant(request, route)
+    current_index = participant.current_index
 
     if current_index >= len(waypoints):
         return render(request, "game/play_finished.html", {"route": route})
@@ -281,11 +387,40 @@ def play(request, token):
                   _play_context(route, waypoints, current_index, token))
 
 
+def play_state(request, token):
+    """Poll target: has anything moved this team on since the client last looked?
+
+    Deliberately read-only -- see the note in ``_current_participant``. The client
+    sends the waypoint it is showing; anything else means the game master skipped
+    them and we hand back the fragment for where they now are.
+    """
+    route = get_object_or_404(Route, token=token)
+    participant = _current_participant(request, route, create=False)
+    if participant is None:
+        return JsonResponse({"status": "unknown"}, status=404)
+
+    waypoints = list(route.get_ordered_waypoints())
+    try:
+        client_index = int(request.GET.get("index", ""))
+    except ValueError:
+        client_index = None
+
+    if client_index == participant.current_index:
+        return JsonResponse({"status": "unchanged"})
+
+    if participant.current_index >= len(waypoints):
+        return JsonResponse({"status": "finished"})
+
+    context = _play_context(route, waypoints, participant.current_index, token)
+    response = _fragment_response(request, context, "moved")
+    return response
+
+
 @require_POST
 def play_advance(request, token):
     route = get_object_or_404(Route, token=token)
-    session_key = f"route_{route.pk}_waypoint"
-    current_index = request.session.get(session_key, 0)
+    participant = _current_participant(request, route)
+    current_index = participant.current_index
     waypoints = list(route.get_ordered_waypoints())
 
     if current_index >= len(waypoints):
@@ -306,7 +441,7 @@ def play_advance(request, token):
             return render(request, "game/play.html", context)
 
     next_index = current_index + 1
-    request.session[session_key] = next_index
+    _set_progress(participant, next_index, len(waypoints))
 
     if _wants_fragment(request):
         if next_index >= len(waypoints):

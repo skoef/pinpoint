@@ -26,6 +26,7 @@
 <div class="d-flex justify-content-between align-items-center mb-4">
   <h1 class="h3 mb-0">{{ route.name }}</h1>
   <div class="d-flex gap-2">
+    <a href="{% url 'participant_list' route.pk %}" class="btn btn-sm btn-outline-primary">{% trans "Teams" %}</a>
     <a href="{% url 'route_qr' route.pk %}" target="_blank" class="btn btn-sm btn-outline-dark">{% trans "QR code" %}</a>
     <a href="{% url 'play' route.token %}" target="_blank" class="btn btn-sm btn-outline-success">{% trans "Play link" %}</a>
     <a href="{% url 'route_list' %}" class="btn btn-sm btn-outline-secondary">{% trans "Back" %}</a>

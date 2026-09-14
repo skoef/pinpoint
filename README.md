@@ -12,7 +12,9 @@ A browser-based GPS scavenger hunt app. Game masters create routes with hidden w
 
 The button or question is only revealed once the player physically arrives at the waypoint. Routes are shared via a URL or QR code. No app install required — it runs entirely in the browser.
 
-**Players** open the link on their phone. The browser asks for location access, then shows the distance in metres to the next hidden waypoint. Once close enough, the advance UI appears. Progress is stored in the session so players can close and reopen the browser without losing their place.
+**Game masters** can also watch progress and help out: the **Teams** page for a route lists every team that has started, which waypoint they are on, and a **Skip waypoint** button that moves a stuck team on without them solving the current one. The team's screen picks that up within about 15 seconds and tells them what happened. Skips are counted per team, so it is visible afterwards who needed a hand.
+
+**Players** open the link on their phone. They enter a team name to start, which is the name the game master sees. The browser asks for location access, then shows the distance in metres to the next hidden waypoint. Once close enough, the advance UI appears. Progress is recorded against the team on the server, with the browser session remembering which team it is, so players can close and reopen the browser without losing their place.
 
 Advancing from one waypoint to the next happens in place, without a page reload — the server returns a rendered fragment for the next waypoint. This keeps the GPS watch alive for the whole route instead of re-acquiring a fix on every waypoint. The plain form POST still works if JavaScript is unavailable.
 

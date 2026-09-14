@@ -27,7 +27,7 @@ from pinpoint.dbconfig import POSTGRES_ENGINE, SQLITE_ENGINE, database_config
 import game
 from . import dbsync
 from .apps import GameConfig
-from .models import Route, Waypoint
+from .models import Participant, Route, Waypoint
 
 IN_MEMORY_STORAGE = override_settings(DEFAULT_FILE_STORAGE="django.core.files.storage.InMemoryStorage")
 
@@ -53,6 +53,32 @@ def make_waypoint(route, order=0, advance_type=Waypoint.BUTTON, **kwargs):
         lat=52.000000 + order * 0.01, lng=4.000000 + order * 0.01,
         advance_type=advance_type, **kwargs,
     )
+
+
+def progress(client, route):
+    """The team's current waypoint index, or None if they have not started.
+
+    Progress lives on Participant rather than in the session, so that a game
+    master can move a stuck team on -- a session is unreachable from outside the
+    browser that owns it.
+    """
+    pk = client.session.get(f"route_{route.pk}_participant")
+    if pk is None:
+        return None
+    return Participant.objects.get(pk=pk).current_index
+
+
+def set_progress(client, route, index):
+    """Put the team at ``index``, creating one if this browser has none yet."""
+    pk = client.session.get(f"route_{route.pk}_participant")
+    if pk is None:
+        participant = Participant.objects.create(route=route, name="Team", current_index=index)
+        session = client.session
+        session[f"route_{route.pk}_participant"] = participant.pk
+        session.save()
+        return participant
+    Participant.objects.filter(pk=pk).update(current_index=index)
+    return Participant.objects.get(pk=pk)
 
 
 def post_json(client, url, data):
@@ -1056,12 +1082,10 @@ class PlayStartTest(TestCase):
         make_waypoint(self.route, order=0)
 
     def test_resets_progress_and_redirects(self):
-        session = self.client.session
-        session[f"route_{self.route.pk}_waypoint"] = 3
-        session.save()
+        set_progress(self.client, self.route, 3)
         self.client.post(reverse("play_start", args=[self.route.token]))
         session = self.client.session
-        self.assertEqual(session.get(f"route_{self.route.pk}_waypoint"), 0)
+        self.assertEqual(progress(self.client, self.route), 0)
 
     def test_redirects_to_play_game(self):
         response = self.client.post(reverse("play_start", args=[self.route.token]))
@@ -1076,8 +1100,7 @@ class PlayGameTest(TestCase):
 
     def _set_index(self, index):
         session = self.client.session
-        session[f"route_{self.route.pk}_waypoint"] = index
-        session.save()
+        set_progress(self.client, self.route, index)
 
     def test_shows_first_waypoint(self):
         response = self.client.get(reverse("play_game", args=[self.route.token]))
@@ -1114,7 +1137,7 @@ class PlayAdvanceButtonTest(TestCase):
     def test_advances_to_next_waypoint(self):
         self.client.post(reverse("play_advance", args=[self.route.token]))
         session = self.client.session
-        self.assertEqual(session[f"route_{self.route.pk}_waypoint"], 1)
+        self.assertEqual(progress(self.client, self.route), 1)
 
     def test_redirects_to_play_game(self):
         response = self.client.post(reverse("play_advance", args=[self.route.token]))
@@ -1134,17 +1157,17 @@ class PlayAdvanceQuestionTest(TestCase):
     def test_correct_answer_advances(self):
         self.client.post(reverse("play_advance", args=[self.route.token]), {"answer": "blue"})
         session = self.client.session
-        self.assertEqual(session[f"route_{self.route.pk}_waypoint"], 1)
+        self.assertEqual(progress(self.client, self.route), 1)
 
     def test_answer_is_case_insensitive(self):
         self.client.post(reverse("play_advance", args=[self.route.token]), {"answer": "BLUE"})
         session = self.client.session
-        self.assertEqual(session[f"route_{self.route.pk}_waypoint"], 1)
+        self.assertEqual(progress(self.client, self.route), 1)
 
     def test_wrong_answer_does_not_advance(self):
         self.client.post(reverse("play_advance", args=[self.route.token]), {"answer": "red"})
         session = self.client.session
-        self.assertEqual(session.get(f"route_{self.route.pk}_waypoint", 0), 0)
+        self.assertEqual(progress(self.client, self.route) or 0, 0)
 
     def test_wrong_answer_shows_error(self):
         response = self.client.post(reverse("play_advance", args=[self.route.token]), {"answer": "red"})
@@ -1154,7 +1177,7 @@ class PlayAdvanceQuestionTest(TestCase):
     def test_empty_answer_does_not_advance(self):
         self.client.post(reverse("play_advance", args=[self.route.token]), {"answer": ""})
         session = self.client.session
-        self.assertEqual(session.get(f"route_{self.route.pk}_waypoint", 0), 0)
+        self.assertEqual(progress(self.client, self.route) or 0, 0)
 
 
 class PlayAdvanceProximityTest(TestCase):
@@ -1165,7 +1188,7 @@ class PlayAdvanceProximityTest(TestCase):
     def test_advances(self):
         self.client.post(reverse("play_advance", args=[self.route.token]))
         session = self.client.session
-        self.assertEqual(session[f"route_{self.route.pk}_waypoint"], 1)
+        self.assertEqual(progress(self.client, self.route), 1)
 
 
 class RouteCompletionFieldsTest(GMTestCase):
@@ -1308,7 +1331,7 @@ class PlayAdvanceFragmentTest(TestCase):
 
     def test_advances_session(self):
         self._advance()
-        self.assertEqual(self.client.session[f"route_{self.route.pk}_waypoint"], 1)
+        self.assertEqual(progress(self.client, self.route), 1)
 
     def test_payload_describes_next_waypoint(self):
         data = self._advance().json()
@@ -1341,9 +1364,7 @@ class PlayAdvanceFragmentTest(TestCase):
         self.assertEqual(data.json(), {"status": "finished"})
 
     def test_advance_past_end_reports_finished(self):
-        session = self.client.session
-        session[f"route_{self.route.pk}_waypoint"] = 2
-        session.save()
+        set_progress(self.client, self.route, 2)
         self.assertEqual(self._advance().json(), {"status": "finished"})
 
 
@@ -1361,12 +1382,12 @@ class PlayAdvanceFragmentQuestionTest(TestCase):
     def test_correct_answer_advances(self):
         data = self._answer("blue").json()
         self.assertEqual(data["status"], "advanced")
-        self.assertEqual(self.client.session[f"route_{self.route.pk}_waypoint"], 1)
+        self.assertEqual(progress(self.client, self.route), 1)
 
     def test_wrong_answer_does_not_advance(self):
         data = self._answer("red").json()
         self.assertEqual(data["status"], "wrong_answer")
-        self.assertEqual(self.client.session.get(f"route_{self.route.pk}_waypoint", 0), 0)
+        self.assertEqual(progress(self.client, self.route) or 0, 0)
 
     def test_wrong_answer_fragment_shows_error_and_same_question(self):
         html = self._answer("red").json()["html"]
@@ -1720,9 +1741,7 @@ class TemplateLeakTest(TestCase):
         self._assert_clean(self._get("play_game", self.route.token), "the play screen")
 
     def test_finished_screen_is_clean(self):
-        session = self.client.session
-        session[f"route_{self.route.pk}_waypoint"] = 2
-        session.save()
+        set_progress(self.client, self.route, 2)
         self._assert_clean(self._get("play_game", self.route.token), "the finished screen")
 
     def test_fragment_is_clean(self):
@@ -1756,11 +1775,9 @@ class PlayStartFragmentTest(TestCase):
         self.assertAlmostEqual(data["waypoint"]["lat"], float(self.wp1.lat), places=6)
 
     def test_resets_progress(self):
-        session = self.client.session
-        session[f"route_{self.route.pk}_waypoint"] = 1
-        session.save()
+        set_progress(self.client, self.route, 1)
         self._start()
-        self.assertEqual(self.client.session[f"route_{self.route.pk}_waypoint"], 0)
+        self.assertEqual(progress(self.client, self.route), 0)
 
     def test_empty_route_reports_empty(self):
         route = make_route(name="No waypoints")
@@ -1846,7 +1863,6 @@ class PlayWalkthroughTest(TestCase):
                       question="Q2?", answer="two")
         make_waypoint(route, order=2, advance_type=Waypoint.PROXIMITY)
         url = reverse("play_advance", args=[route.token])
-        session_key = f"route_{route.pk}_waypoint"
 
         # Initial page load shows waypoint 1.
         page = self.client.get(reverse("play_game", args=[route.token])).content.decode()
@@ -1861,7 +1877,7 @@ class PlayWalkthroughTest(TestCase):
         # Wrong answer at 2 keeps us in place.
         data = self.client.post(url, {"answer": "nope"}, **AJAX).json()
         self.assertEqual(data["status"], "wrong_answer")
-        self.assertEqual(self.client.session[session_key], 1)
+        self.assertEqual(progress(self.client, route), 1)
 
         # 2 -> 3 (correct answer)
         data = self.client.post(url, {"answer": "TWO"}, **AJAX).json()
@@ -1872,7 +1888,7 @@ class PlayWalkthroughTest(TestCase):
         # 3 -> finished
         data = self.client.post(url, {}, **AJAX).json()
         self.assertEqual(data["status"], "finished")
-        self.assertEqual(self.client.session[session_key], 3)
+        self.assertEqual(progress(self.client, route), 3)
 
         # The finished screen renders on the follow-up page load.
         page = self.client.get(reverse("play_game", args=[route.token])).content.decode()
@@ -1908,6 +1924,331 @@ class PlayPanelTest(TestCase):
         self.assertRedirects(response, reverse("play_game", args=[route.token]))
 
 
+class ParticipantTest(TestCase):
+    """Starting a route registers a team; progress hangs off that row."""
+
+    def setUp(self):
+        self.route = make_route()
+        make_waypoint(self.route, order=0, advance_type=Waypoint.BUTTON)
+        make_waypoint(self.route, order=1, advance_type=Waypoint.BUTTON)
+
+    def _start(self, name="The Explorers", **kwargs):
+        return self.client.post(reverse("play_start", args=[self.route.token]),
+                                {"name": name}, **kwargs)
+
+    def test_start_creates_a_team_with_the_given_name(self):
+        self._start("The Explorers")
+        participant = self.route.participants.get()
+        self.assertEqual(participant.name, "The Explorers")
+        self.assertEqual(participant.current_index, 0)
+        self.assertIsNone(participant.finished_at)
+
+    def test_blank_name_falls_back_to_a_numbered_team(self):
+        self._start("")
+        self.assertEqual(self.route.participants.get().name, "Team 1")
+
+    def test_whitespace_name_falls_back_too(self):
+        self._start("   ")
+        self.assertEqual(self.route.participants.get().name, "Team 1")
+
+    def test_restarting_reuses_the_same_team(self):
+        # Otherwise the game master's list fills up with abandoned duplicates.
+        self._start("The Explorers")
+        self.client.post(reverse("play_advance", args=[self.route.token]))
+        self._start("The Explorers")
+        self.assertEqual(self.route.participants.count(), 1)
+        self.assertEqual(progress(self.client, self.route), 0)
+
+    def test_a_second_browser_is_a_second_team(self):
+        self._start("First")
+        other = self.client_class()
+        other.post(reverse("play_start", args=[self.route.token]), {"name": "Second"})
+        self.assertEqual(
+            sorted(self.route.participants.values_list("name", flat=True)),
+            ["First", "Second"])
+
+    def test_advancing_moves_the_row_not_the_session(self):
+        self._start()
+        self.client.post(reverse("play_advance", args=[self.route.token]))
+        self.assertEqual(self.route.participants.get().current_index, 1)
+
+    def test_finishing_stamps_finished_at(self):
+        self._start()
+        for _ in range(2):
+            self.client.post(reverse("play_advance", args=[self.route.token]))
+        participant = self.route.participants.get()
+        self.assertEqual(participant.current_index, 2)
+        self.assertIsNotNone(participant.finished_at)
+        self.assertTrue(participant.is_finished)
+
+    def test_legacy_session_progress_is_carried_over(self):
+        # A team already mid-route when this shipped must not be sent back to
+        # the start.
+        session = self.client.session
+        session[f"route_{self.route.pk}_waypoint"] = 1
+        session.save()
+        html = self.client.get(reverse("play_game", args=[self.route.token])).content.decode()
+        self.assertIn("Waypoint 2 of 2", html)
+        self.assertEqual(self.route.participants.get().current_index, 1)
+
+    def test_deleting_a_route_removes_its_teams(self):
+        self._start()
+        self.route.is_active = False
+        self.route.save()
+        self.route.delete()
+        self.assertEqual(Participant.objects.count(), 0)
+
+
+class ParticipantSkipTest(GMTestCase):
+    """The game master moves a stuck team on by one waypoint."""
+
+    def setUp(self):
+        super().setUp()
+        self.route = make_route(owner=self.user)
+        for order in range(3):
+            make_waypoint(self.route, order=order, advance_type=Waypoint.QUESTION,
+                          question="Q?", answer="a")
+        self.participant = Participant.objects.create(route=self.route, name="Stuck")
+
+    def _skip(self, participant=None):
+        target = participant or self.participant
+        return self.client.post(reverse("participant_skip", args=[target.pk]), **AJAX)
+
+    def test_skip_advances_by_one(self):
+        self._skip()
+        self.participant.refresh_from_db()
+        self.assertEqual(self.participant.current_index, 1)
+
+    def test_skip_is_recorded(self):
+        self._skip()
+        self.participant.refresh_from_db()
+        self.assertEqual(self.participant.skips, 1)
+        self.assertIsNotNone(self.participant.last_skip_at)
+
+    def test_repeated_skips_accumulate(self):
+        self._skip()
+        self._skip()
+        self.participant.refresh_from_db()
+        self.assertEqual(self.participant.current_index, 2)
+        self.assertEqual(self.participant.skips, 2)
+
+    def test_skipping_the_last_waypoint_finishes_the_team(self):
+        Participant.objects.filter(pk=self.participant.pk).update(current_index=2)
+        self._skip()
+        self.participant.refresh_from_db()
+        self.assertEqual(self.participant.current_index, 3)
+        self.assertIsNotNone(self.participant.finished_at)
+
+    def test_skipping_a_finished_team_does_nothing(self):
+        Participant.objects.filter(pk=self.participant.pk).update(current_index=3)
+        self._skip()
+        self.participant.refresh_from_db()
+        self.assertEqual(self.participant.current_index, 3)
+        self.assertEqual(self.participant.skips, 0)
+
+    def test_response_describes_the_new_state(self):
+        data = self._skip().json()
+        self.assertEqual(data["name"], "Stuck")
+        self.assertEqual(data["number"], 2)
+        self.assertEqual(data["total"], 3)
+        self.assertFalse(data["finished"])
+        self.assertEqual(data["skips"], 1)
+
+    def test_requires_login(self):
+        self.client.logout()
+        response = self.client.post(reverse("participant_skip", args=[self.participant.pk]))
+        self.assertEqual(response.status_code, 302)
+        self.participant.refresh_from_db()
+        self.assertEqual(self.participant.current_index, 0)
+
+    def test_cannot_skip_another_users_team(self):
+        other = make_user("mallory")
+        their_route = make_route(name="Theirs", owner=other)
+        make_waypoint(their_route, order=0)
+        theirs = Participant.objects.create(route=their_route, name="Not yours")
+        response = self._skip(theirs)
+        self.assertEqual(response.status_code, 404)
+        theirs.refresh_from_db()
+        self.assertEqual(theirs.current_index, 0)
+
+    def test_get_not_allowed(self):
+        response = self.client.get(reverse("participant_skip", args=[self.participant.pk]))
+        self.assertEqual(response.status_code, 405)
+
+
+class ParticipantListTest(GMTestCase):
+    def setUp(self):
+        super().setUp()
+        self.route = make_route(owner=self.user)
+        make_waypoint(self.route, order=0)
+        make_waypoint(self.route, order=1)
+        self.participant = Participant.objects.create(route=self.route, name="Red",
+                                                     current_index=1)
+
+    def test_page_lists_teams_and_progress(self):
+        html = self.client.get(reverse("participant_list", args=[self.route.pk])).content.decode()
+        self.assertIn("Red", html)
+        self.assertIn("Waypoint 2 of 2", html)
+        self.assertIn("Skip waypoint", html)
+
+    def test_page_handles_no_teams(self):
+        Participant.objects.all().delete()
+        html = self.client.get(reverse("participant_list", args=[self.route.pk])).content.decode()
+        self.assertIn("No teams have started yet.", html)
+
+    def test_json_for_polling(self):
+        data = self.client.get(reverse("participant_list", args=[self.route.pk]),
+                               **AJAX).json()
+        self.assertEqual(len(data["participants"]), 1)
+        entry = data["participants"][0]
+        self.assertEqual(entry["name"], "Red")
+        self.assertEqual((entry["number"], entry["total"]), (2, 2))
+
+    def test_requires_login(self):
+        self.client.logout()
+        response = self.client.get(reverse("participant_list", args=[self.route.pk]))
+        self.assertEqual(response.status_code, 302)
+
+    def test_cannot_see_another_users_route(self):
+        other = make_user("mallory")
+        their_route = make_route(name="Theirs", owner=other)
+        response = self.client.get(reverse("participant_list", args=[their_route.pk]))
+        self.assertEqual(response.status_code, 404)
+
+    def test_only_shows_this_routes_teams(self):
+        another = make_route(name="Another", owner=self.user)
+        Participant.objects.create(route=another, name="Elsewhere")
+        html = self.client.get(reverse("participant_list", args=[self.route.pk])).content.decode()
+        self.assertIn("Red", html)
+        self.assertNotIn("Elsewhere", html)
+
+
+class PlayStatePollTest(TestCase):
+    """The player's page polls to notice a skip; it must stay read-only."""
+
+    def setUp(self):
+        self.route = make_route()
+        for order in range(3):
+            make_waypoint(self.route, order=order, advance_type=Waypoint.BUTTON)
+        self.client.post(reverse("play_start", args=[self.route.token]), {"name": "Red"})
+        self.participant = self.route.participants.get()
+
+    def _poll(self, index):
+        return self.client.get(reverse("play_state", args=[self.route.token]),
+                               {"index": index}, **AJAX)
+
+    def test_unchanged_when_client_is_in_step(self):
+        self.assertEqual(self._poll(0).json(), {"status": "unchanged"})
+
+    def test_returns_the_fragment_after_a_skip(self):
+        Participant.objects.filter(pk=self.participant.pk).update(current_index=1)
+        data = self._poll(0).json()
+        self.assertEqual(data["status"], "moved")
+        self.assertEqual(data["number"], 2)
+        self.assertIn("Waypoint 2 of 3", data["html"])
+
+    def test_reports_finished_when_skipped_past_the_end(self):
+        Participant.objects.filter(pk=self.participant.pk).update(current_index=3)
+        self.assertEqual(self._poll(2).json(), {"status": "finished"})
+
+    def test_unknown_team_gets_404(self):
+        other = self.client_class()
+        response = other.get(reverse("play_state", args=[self.route.token]), {"index": 0})
+        self.assertEqual(response.status_code, 404)
+
+    def test_missing_index_is_treated_as_a_change(self):
+        response = self.client.get(reverse("play_state", args=[self.route.token]), **AJAX)
+        self.assertEqual(response.json()["status"], "moved")
+
+    def test_polling_creates_no_participant(self):
+        other = self.client_class()
+        before = Participant.objects.count()
+        other.get(reverse("play_state", args=[self.route.token]), {"index": 0})
+        self.assertEqual(Participant.objects.count(), before)
+
+    def test_polling_does_not_mark_the_database_dirty(self):
+        # Every write triggers an S3 upload of the whole database, and this
+        # endpoint is hit on a timer by every playing team.
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp, True)
+        with override_settings(SQLITE_S3_SYNC=True, SQLITE_S3_BUCKET="b",
+                               SQLITE_DIRTY_MARKER=os.path.join(tmp, "dirty")):
+            dbsync.connect_signals()
+            self.addCleanup(dbsync.disconnect_signals)
+            self.assertFalse(dbsync.is_dirty())
+            self._poll(0)
+            self.assertFalse(dbsync.is_dirty(), "the poll wrote to the database")
+
+
+class SkipWalkthroughTest(TestCase):
+    """Two browsers: a stuck team and the game master unsticking them."""
+
+    def test_gm_skip_reaches_the_player(self):
+        gm = make_user("gm")
+        route = make_route(owner=gm)
+        make_waypoint(route, order=0, advance_type=Waypoint.QUESTION,
+                      question="Impossible?", answer="never-guessable")
+        make_waypoint(route, order=1, advance_type=Waypoint.BUTTON, label="Second")
+
+        player = self.client_class()
+        master = self.client_class()
+        master.login(username="gm", password="testpass")
+
+        # The team starts and gets stuck on the riddle.
+        player.post(reverse("play_start", args=[route.token]), {"name": "Stuck Team"})
+        wrong = player.post(reverse("play_advance", args=[route.token]),
+                            {"answer": "nope"}, **AJAX).json()
+        self.assertEqual(wrong["status"], "wrong_answer")
+
+        # Their page polls and sees nothing new.
+        self.assertEqual(
+            player.get(reverse("play_state", args=[route.token]), {"index": 0}, **AJAX).json(),
+            {"status": "unchanged"})
+
+        # The game master finds them on the teams page and moves them on.
+        listing = master.get(reverse("participant_list", args=[route.pk]),
+                             **AJAX).json()["participants"]
+        self.assertEqual(listing[0]["name"], "Stuck Team")
+        self.assertEqual(listing[0]["number"], 1)
+
+        skipped = master.post(
+            reverse("participant_skip", args=[listing[0]["id"]]), **AJAX).json()
+        self.assertEqual(skipped["number"], 2)
+
+        # The next poll hands the team the second waypoint.
+        moved = player.get(reverse("play_state", args=[route.token]),
+                           {"index": 0}, **AJAX).json()
+        self.assertEqual(moved["status"], "moved")
+        self.assertEqual(moved["number"], 2)
+        self.assertIn("Waypoint 2 of 2", moved["html"])
+
+        # And they can finish from there under their own steam.
+        finished = player.post(reverse("play_advance", args=[route.token]), **AJAX).json()
+        self.assertEqual(finished, {"status": "finished"})
+        self.assertIsNotNone(route.participants.get().finished_at)
+
+    def test_a_skip_does_not_touch_other_teams(self):
+        gm = make_user("gm2")
+        route = make_route(owner=gm)
+        for order in range(3):
+            make_waypoint(route, order=order, advance_type=Waypoint.BUTTON)
+
+        stuck, moving = self.client_class(), self.client_class()
+        stuck.post(reverse("play_start", args=[route.token]), {"name": "Stuck"})
+        moving.post(reverse("play_start", args=[route.token]), {"name": "Moving"})
+
+        master = self.client_class()
+        master.login(username="gm2", password="testpass")
+        target = route.participants.get(name="Stuck")
+        master.post(reverse("participant_skip", args=[target.pk]), **AJAX)
+
+        self.assertEqual(route.participants.get(name="Stuck").current_index, 1)
+        self.assertEqual(route.participants.get(name="Moving").current_index, 0)
+        self.assertEqual(
+            moving.get(reverse("play_state", args=[route.token]), {"index": 0}, **AJAX).json(),
+            {"status": "unchanged"})
+
+
 class PlaySessionIsolationTest(TestCase):
     def test_separate_sessions_per_route(self):
         route_a = make_route(name="A")
@@ -1918,5 +2259,5 @@ class PlaySessionIsolationTest(TestCase):
         self.client.post(reverse("play_advance", args=[route_a.token]))
 
         session = self.client.session
-        self.assertEqual(session.get(f"route_{route_a.pk}_waypoint"), 1)
-        self.assertEqual(session.get(f"route_{route_b.pk}_waypoint", 0), 0)
+        self.assertEqual(progress(self.client, route_a), 1)
+        self.assertEqual(progress(self.client, route_b) or 0, 0)

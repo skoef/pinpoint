@@ -4,7 +4,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: pinpoint\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-09-07 09:15+0000\n"
+"POT-Creation-Date: 2026-09-14 19:41+0000\n"
 "PO-Revision-Date: 2026-09-03 12:13+0000\n"
 "Language-Team: English\n"
 "Language: en\n"
@@ -14,6 +14,7 @@ msgstr ""
 "Plural-Forms: nplurals=2; plural=(n != 1);\n"
 
 #: game/templates/game/_play_waypoint.html:6
+#: game/templates/game/participant_list.html:35
 #, python-format
 msgid "Waypoint %(num)s of %(total)s"
 msgstr "Waypoint %(num)s of %(total)s"
@@ -22,73 +23,132 @@ msgstr "Waypoint %(num)s of %(total)s"
 msgid "Waiting for location…"
 msgstr "Waiting for location…"
 
-#: game/templates/game/_play_waypoint.html:29
-#: game/templates/game/_play_waypoint.html:51
+#: game/templates/game/_play_waypoint.html:35
+#: game/templates/game/_play_waypoint.html:57
 msgid "Finish"
 msgstr "Finish"
 
-#: game/templates/game/_play_waypoint.html:29
-#: game/templates/game/_play_waypoint.html:51
+#: game/templates/game/_play_waypoint.html:35
+#: game/templates/game/_play_waypoint.html:57
 msgid "Next waypoint"
 msgstr "Next waypoint"
 
-#: game/templates/game/_play_waypoint.html:40
+#: game/templates/game/_play_waypoint.html:46
 msgid "Your answer…"
 msgstr "Your answer…"
 
-#: game/templates/game/_play_waypoint.html:42
+#: game/templates/game/_play_waypoint.html:48
 msgid "That's not correct, try again."
 msgstr "That's not correct, try again."
 
-#: game/templates/game/_play_waypoint.html:44
+#: game/templates/game/_play_waypoint.html:50
 msgid "Submit"
 msgstr "Submit"
 
-#: game/templates/game/_play_waypoint.html:61
+#: game/templates/game/_play_waypoint.html:67
 #, python-format
 msgid "Get within %(meters)s m to continue"
 msgstr "Get within %(meters)s m to continue"
 
-#: game/templates/game/base.html:19
+#: game/templates/game/base.html:20
 msgid "Log out"
 msgstr "Log out"
 
-#: game/templates/game/login.html:22
+#: game/templates/game/login.html:24
 msgid "Invalid username or password."
 msgstr "Invalid username or password."
 
-#: game/templates/game/login.html:25
+#: game/templates/game/login.html:27
 msgid "Username"
 msgstr "Username"
 
-#: game/templates/game/login.html:29
+#: game/templates/game/login.html:31
 msgid "Password"
 msgstr "Password"
 
-#: game/templates/game/login.html:32
+#: game/templates/game/login.html:34
 msgid "Log in"
 msgstr "Log in"
 
-#: game/templates/game/play.html:28
+#: game/templates/game/participant_list.html:3
+#: game/templates/game/participant_list.html:7
+#: game/templates/game/route_edit.html:29
+#: game/templates/game/route_list.html:31
+msgid "Teams"
+msgstr "Teams"
+
+#: game/templates/game/participant_list.html:9
+msgid "Edit route"
+msgstr "Edit route"
+
+#: game/templates/game/participant_list.html:10
+#: game/templates/game/route_edit.html:32
+msgid "Back"
+msgstr "Back"
+
+#: game/templates/game/participant_list.html:15
+msgid "Use “Skip waypoint” when a team is stuck. They move on to the next waypoint without having to solve the current one."
+msgstr "Use “Skip waypoint” when a team is stuck. They move on to the next waypoint without having to solve the current one."
+
+#: game/templates/game/participant_list.html:21
+msgid "Team"
+msgstr "Team"
+
+#: game/templates/game/participant_list.html:22
+msgid "Progress"
+msgstr "Progress"
+
+#: game/templates/game/participant_list.html:23
+msgid "Started"
+msgstr "Started"
+
+#: game/templates/game/participant_list.html:24
+msgid "Action"
+msgstr "Action"
+
+#: game/templates/game/participant_list.html:33
+#: game/templates/game/participant_list.html:59
+msgid "Finished"
+msgstr "Finished"
+
+#: game/templates/game/participant_list.html:39
+#: game/templates/game/participant_list.html:61
+msgid "Times the game master moved this team on"
+msgstr "Times the game master moved this team on"
+
+#: game/templates/game/participant_list.html:46
+msgid "Skip waypoint"
+msgstr "Skip waypoint"
+
+#: game/templates/game/participant_list.html:51
+msgid "No teams have started yet."
+msgstr "No teams have started yet."
+
+#: game/templates/game/participant_list.html:60
+#, python-brace-format
+msgid "Waypoint {num} of {total}"
+msgstr "Waypoint {num} of {total}"
+
+#: game/templates/game/play.html:30
 msgid "Tap to enable sound"
 msgstr "Tap to enable sound"
 
-#: game/templates/game/play.html:30
+#: game/templates/game/play.html:32
 msgid "Sound and vibration"
 msgstr "Sound and vibration"
 
-#: game/templates/game/play.html:37 game/templates/game/route_list.html:24
+#: game/templates/game/play.html:42 game/templates/game/route_list.html:24
 #, python-format
 msgid "%(count)s waypoint"
 msgid_plural "%(count)s waypoints"
 msgstr[0] "%(count)s waypoint"
 msgstr[1] "%(count)s waypoints"
 
-#: game/templates/game/play.html:46
+#: game/templates/game/play.html:51
 msgid "Allow your browser to access your location when prompted."
 msgstr "Allow your browser to access your location when prompted."
 
-#: game/templates/game/play.html:50
+#: game/templates/game/play.html:55
 msgid ""
 "The app shows how many <strong>meters</strong> you are from the next hidden "
 "location — navigate towards it."
@@ -96,27 +156,35 @@ msgstr ""
 "The app shows how many <strong>meters</strong> you are from the next hidden "
 "location — navigate towards it."
 
-#: game/templates/game/play.html:54
+#: game/templates/game/play.html:59
 msgid "Once you arrive, follow the instructions to unlock the next waypoint."
 msgstr "Once you arrive, follow the instructions to unlock the next waypoint."
 
-#: game/templates/game/play.html:58
+#: game/templates/game/play.html:63
 #, python-format
 msgid "Find the 1 waypoint to complete the route!"
 msgid_plural "Find all %(count)s waypoints to complete the route!"
 msgstr[0] "Find the 1 waypoint to complete the route!"
 msgstr[1] "Find all %(count)s waypoints to complete the route!"
 
-#: game/templates/game/play.html:64
+#: game/templates/game/play.html:71
+msgid "Team name"
+msgstr "Team name"
+
+#: game/templates/game/play.html:75
+msgid "e.g. The Explorers"
+msgstr "e.g. The Explorers"
+
+#: game/templates/game/play.html:78
 msgid "Start"
 msgstr "Start"
 
-#: game/templates/game/play.html:97
+#: game/templates/game/play.html:125
 #, python-brace-format
 msgid "Accuracy: ±{accuracy} m"
 msgstr "Accuracy: ±{accuracy} m"
 
-#: game/templates/game/play.html:98
+#: game/templates/game/play.html:126
 msgid ""
 "Could not detect your location. Make sure location access is enabled in your "
 "browser and device settings."
@@ -124,33 +192,37 @@ msgstr ""
 "Could not detect your location. Make sure location access is enabled in your "
 "browser and device settings."
 
-#: game/templates/game/play.html:99
+#: game/templates/game/play.html:127
 msgid "Location access denied. Enable it in your browser settings and reload."
 msgstr "Location access denied. Enable it in your browser settings and reload."
 
-#: game/templates/game/play.html:100
+#: game/templates/game/play.html:128
 msgid "Geolocation is not supported by this browser."
 msgstr "Geolocation is not supported by this browser."
 
-#: game/templates/game/play.html:101
+#: game/templates/game/play.html:129
 msgid "Close enough — advancing…"
 msgstr "Close enough — advancing…"
 
-#: game/templates/game/play.html:102
+#: game/templates/game/play.html:130
 #, python-brace-format
 msgid "Get within {meters} m to continue ({distance} m away)"
 msgstr "Get within {meters} m to continue ({distance} m away)"
 
-#: game/templates/game/play.html:103
+#: game/templates/game/play.html:131
 #, python-brace-format
 msgid "Get within {meters} m to continue"
 msgstr "Get within {meters} m to continue"
 
-#: game/templates/game/play.html:104
+#: game/templates/game/play.html:132
 msgid "Improving accuracy…"
 msgstr "Improving accuracy…"
 
-#: game/templates/game/play_empty.html:15
+#: game/templates/game/play.html:133
+msgid "The game master moved you on to the next waypoint."
+msgstr "The game master moved you on to the next waypoint."
+
+#: game/templates/game/play_empty.html:16
 msgid "This route has no waypoints yet."
 msgstr "This route has no waypoints yet."
 
@@ -158,11 +230,11 @@ msgstr "This route has no waypoints yet."
 msgid "Finished!"
 msgstr "Finished!"
 
-#: game/templates/game/play_finished.html:15
+#: game/templates/game/play_finished.html:16
 msgid "You finished!"
 msgstr "You finished!"
 
-#: game/templates/game/play_unavailable.html:15
+#: game/templates/game/play_unavailable.html:16
 msgid "This route is currently unavailable."
 msgstr "This route is currently unavailable."
 
@@ -170,162 +242,158 @@ msgstr "This route is currently unavailable."
 msgid "Edit"
 msgstr "Edit"
 
-#: game/templates/game/route_edit.html:29
+#: game/templates/game/route_edit.html:30
 msgid "QR code"
 msgstr "QR code"
 
-#: game/templates/game/route_edit.html:30
+#: game/templates/game/route_edit.html:31
 msgid "Play link"
 msgstr "Play link"
 
-#: game/templates/game/route_edit.html:31
-msgid "Back"
-msgstr "Back"
-
-#: game/templates/game/route_edit.html:37
+#: game/templates/game/route_edit.html:38
 msgid "Click on the map to add a waypoint."
 msgstr "Click on the map to add a waypoint."
 
-#: game/templates/game/route_edit.html:43
+#: game/templates/game/route_edit.html:44
 msgid "Route name"
 msgstr "Route name"
 
-#: game/templates/game/route_edit.html:46
+#: game/templates/game/route_edit.html:47
 msgid "Description (shown to player on the intro screen)"
 msgstr "Description (shown to player on the intro screen)"
 
-#: game/templates/game/route_edit.html:49
+#: game/templates/game/route_edit.html:50
 msgid "Completion message"
 msgstr "Completion message"
 
-#: game/templates/game/route_edit.html:49
-#: game/templates/game/route_edit.html:53
-#: game/templates/game/route_edit.html:122
-#: game/templates/game/route_edit.html:141
-#: game/templates/game/route_edit.html:165
+#: game/templates/game/route_edit.html:50
+#: game/templates/game/route_edit.html:54
+#: game/templates/game/route_edit.html:124
+#: game/templates/game/route_edit.html:143
+#: game/templates/game/route_edit.html:173
 #: game/templates/game/route_form.html:14
 msgid "optional"
 msgstr "optional"
 
-#: game/templates/game/route_edit.html:50
+#: game/templates/game/route_edit.html:51
 msgid "e.g. Well done! You found all the hidden locations."
 msgstr "e.g. Well done! You found all the hidden locations."
 
-#: game/templates/game/route_edit.html:53
+#: game/templates/game/route_edit.html:54
 msgid "Completion emoji"
 msgstr "Completion emoji"
 
-#: game/templates/game/route_edit.html:57
+#: game/templates/game/route_edit.html:58
 msgid "Clear"
 msgstr "Clear"
 
-#: game/templates/game/route_edit.html:65
-#: game/templates/game/route_edit.html:178
+#: game/templates/game/route_edit.html:66
+#: game/templates/game/route_edit.html:186
 msgid "Save"
 msgstr "Save"
 
-#: game/templates/game/route_edit.html:70
+#: game/templates/game/route_edit.html:71
 msgid "Waypoints"
 msgstr "Waypoints"
 
-#: game/templates/game/route_edit.html:97
+#: game/templates/game/route_edit.html:99
 msgid "No waypoints yet."
 msgstr "No waypoints yet."
 
-#: game/templates/game/route_edit.html:102
+#: game/templates/game/route_edit.html:104
 msgid "Share link:"
 msgstr "Share link:"
 
-#: game/templates/game/route_edit.html:113
-#: game/templates/game/route_edit.html:189
+#: game/templates/game/route_edit.html:115
+#: game/templates/game/route_edit.html:197
 msgid "Add waypoint"
 msgstr "Add waypoint"
 
-#: game/templates/game/route_edit.html:122
+#: game/templates/game/route_edit.html:124
 msgid "Label"
 msgstr "Label"
 
-#: game/templates/game/route_edit.html:123
+#: game/templates/game/route_edit.html:125
 msgid "e.g. The old oak tree"
 msgstr "e.g. The old oak tree"
 
-#: game/templates/game/route_edit.html:127
+#: game/templates/game/route_edit.html:129
 msgid "Advance type"
 msgstr "Advance type"
 
-#: game/templates/game/route_edit.html:129
+#: game/templates/game/route_edit.html:131
 msgid "Button — player taps to continue"
 msgstr "Button — player taps to continue"
 
-#: game/templates/game/route_edit.html:130
+#: game/templates/game/route_edit.html:132
 msgid "Question / Riddle — player must answer correctly"
 msgstr "Question / Riddle — player must answer correctly"
 
-#: game/templates/game/route_edit.html:131
+#: game/templates/game/route_edit.html:133
 msgid "Auto-proximity — advances when close enough"
 msgstr "Auto-proximity — advances when close enough"
 
-#: game/templates/game/route_edit.html:137
+#: game/templates/game/route_edit.html:139
 msgid "Text"
 msgstr "Text"
 
-#: game/templates/game/route_edit.html:137
+#: game/templates/game/route_edit.html:139
 msgid "shown above the button, optional"
 msgstr "shown above the button, optional"
 
-#: game/templates/game/route_edit.html:138
+#: game/templates/game/route_edit.html:140
 msgid "e.g. You found the hidden chest! Open it and note down the code inside."
 msgstr ""
 "e.g. You found the hidden chest! Open it and note down the code inside."
 
-#: game/templates/game/route_edit.html:141
+#: game/templates/game/route_edit.html:143
 msgid "Button caption"
 msgstr "Button caption"
 
-#: game/templates/game/route_edit.html:142
+#: game/templates/game/route_edit.html:144
 msgid "e.g. I found it!"
 msgstr "e.g. I found it!"
 
-#: game/templates/game/route_edit.html:148
+#: game/templates/game/route_edit.html:150
 msgid "Question or riddle"
 msgstr "Question or riddle"
 
-#: game/templates/game/route_edit.html:149
+#: game/templates/game/route_edit.html:151
 msgid "e.g. What year was this bridge built?"
 msgstr "e.g. What year was this bridge built?"
 
-#: game/templates/game/route_edit.html:152
+#: game/templates/game/route_edit.html:154
 msgid "Correct answer"
 msgstr "Correct answer"
 
-#: game/templates/game/route_edit.html:152
+#: game/templates/game/route_edit.html:154
 msgid "case-insensitive"
 msgstr "case-insensitive"
 
-#: game/templates/game/route_edit.html:159
+#: game/templates/game/route_edit.html:161
 msgid "Auto-advance radius (meters)"
 msgstr "Auto-advance radius (meters)"
 
-#: game/templates/game/route_edit.html:165
+#: game/templates/game/route_edit.html:173
 msgid "Image"
 msgstr "Image"
 
-#: game/templates/game/route_edit.html:170
+#: game/templates/game/route_edit.html:178
 msgid "Remove image"
 msgstr "Remove image"
 
-#: game/templates/game/route_edit.html:177
+#: game/templates/game/route_edit.html:185
 #: game/templates/game/route_form.html:19
-#: game/templates/game/route_list.html:64
+#: game/templates/game/route_list.html:65
 msgid "Cancel"
 msgstr "Cancel"
 
-#: game/templates/game/route_edit.html:190
+#: game/templates/game/route_edit.html:198
 msgid "Edit waypoint"
 msgstr "Edit waypoint"
 
-#: game/templates/game/route_edit.html:191
-#: game/templates/game/route_edit.html:218
+#: game/templates/game/route_edit.html:199
+#: game/templates/game/route_edit.html:227
 msgid "Waypoint"
 msgstr "Waypoint"
 
@@ -361,49 +429,49 @@ msgstr "active"
 msgid "inactive"
 msgstr "inactive"
 
-#: game/templates/game/route_list.html:31
+#: game/templates/game/route_list.html:32
 msgid "QR"
 msgstr "QR"
 
-#: game/templates/game/route_list.html:32
+#: game/templates/game/route_list.html:33
 msgid "Play"
 msgstr "Play"
 
-#: game/templates/game/route_list.html:37
+#: game/templates/game/route_list.html:38
 msgid "Deactivate"
 msgstr "Deactivate"
 
-#: game/templates/game/route_list.html:39
+#: game/templates/game/route_list.html:40
 msgid "Activate"
 msgstr "Activate"
 
-#: game/templates/game/route_list.html:48
+#: game/templates/game/route_list.html:49
 msgid "Deactivate the route before deleting it."
 msgstr "Deactivate the route before deleting it."
 
-#: game/templates/game/route_list.html:48
-#: game/templates/game/route_list.html:51
-#: game/templates/game/route_list.html:67
+#: game/templates/game/route_list.html:49
+#: game/templates/game/route_list.html:52
+#: game/templates/game/route_list.html:68
 msgid "Delete"
 msgstr "Delete"
 
-#: game/templates/game/route_list.html:62
+#: game/templates/game/route_list.html:63
 #, python-format
 msgid "Delete <strong>%(name)s</strong>? This cannot be undone."
 msgstr "Delete <strong>%(name)s</strong>? This cannot be undone."
 
-#: game/templates/game/route_list.html:79
+#: game/templates/game/route_list.html:80
 msgid "No routes yet."
 msgstr "No routes yet."
 
-#: game/templates/game/route_list.html:79
+#: game/templates/game/route_list.html:80
 msgid "Create one."
 msgstr "Create one."
 
-#: pinpoint/settings.py:112
+#: pinpoint/settings.py:116
 msgid "English"
 msgstr "English"
 
-#: pinpoint/settings.py:113
+#: pinpoint/settings.py:117
 msgid "Dutch"
 msgstr "Dutch"

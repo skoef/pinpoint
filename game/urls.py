@@ -11,6 +11,8 @@ urlpatterns = [
     path("routes/<int:pk>/waypoints/add/", views.waypoint_add, name="waypoint_add"),
     path("routes/<int:pk>/waypoints/reorder/", views.waypoint_reorder, name="waypoint_reorder"),
     path("routes/<int:pk>/qr.png", views.route_qr, name="route_qr"),
+    path("routes/<int:pk>/participants/", views.participant_list, name="participant_list"),
+    path("participants/<int:pk>/skip/", views.participant_skip, name="participant_skip"),
     path("waypoints/<int:pk>/delete/", views.waypoint_delete, name="waypoint_delete"),
     path("waypoints/<int:pk>/update/", views.waypoint_update, name="waypoint_update"),
     # Health checks
@@ -21,4 +23,5 @@ urlpatterns = [
     path("play/<uuid:token>/start/", views.play_start, name="play_start"),
     path("play/<uuid:token>/go/", views.play, name="play_game"),
     path("play/<uuid:token>/advance/", views.play_advance, name="play_advance"),
+    path("play/<uuid:token>/state/", views.play_state, name="play_state"),
 ]

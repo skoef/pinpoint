@@ -1,0 +1,120 @@
+{% extends "game/base.html" %}
+{% load i18n %}
+{% block title %}{{ route.name }} — {% trans "Teams" %}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h1 class="h3 mb-0">{{ route.name }} — {% trans "Teams" %}</h1>
+  <div class="d-flex gap-2">
+    <a href="{% url 'route_edit' route.pk %}" class="btn btn-sm btn-outline-secondary">{% trans "Edit route" %}</a>
+    <a href="{% url 'route_list' %}" class="btn btn-sm btn-outline-secondary">{% trans "Back" %}</a>
+  </div>
+</div>
+
+<p class="text-muted small">
+  {% trans "Use “Skip waypoint” when a team is stuck. They move on to the next waypoint without having to solve the current one." %}
+</p>
+
+<table class="table align-middle">
+  <thead>
+    <tr>
+      <th>{% trans "Team" %}</th>
+      <th>{% trans "Progress" %}</th>
+      <th>{% trans "Started" %}</th>
+      <th class="text-end">{% trans "Action" %}</th>
+    </tr>
+  </thead>
+  <tbody id="participant-rows">
+    {% for participant in participants %}
+    <tr data-id="{{ participant.pk }}">
+      <td class="name">{{ participant.name }}</td>
+      <td class="progress-cell">
+        {% if participant.finished_at %}
+          <span class="badge bg-success">{% trans "Finished" %}</span>
+        {% else %}
+          {% blocktrans with num=participant.current_index|add:1 total=total %}Waypoint {{ num }} of {{ total }}{% endblocktrans %}
+        {% endif %}
+        {% if participant.skips %}
+          <span class="badge bg-secondary ms-1"
+                title="{% trans 'Times the game master moved this team on' %}">↷{{ participant.skips }}</span>
+        {% endif %}
+      </td>
+      <td class="text-muted small">{{ participant.started_at|time:"H:i" }}</td>
+      <td class="text-end">
+        <button class="btn btn-sm btn-outline-primary btn-skip" data-id="{{ participant.pk }}"
+                {% if participant.finished_at %}disabled{% endif %}>
+          {% trans "Skip waypoint" %}
+        </button>
+      </td>
+    </tr>
+    {% empty %}
+    <tr id="empty-row"><td colspan="4" class="text-muted">{% trans "No teams have started yet." %}</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+{% trans "Finished" as str_finished %}
+{% trans "Waypoint {num} of {total}" as str_progress %}
+{% trans "Times the game master moved this team on" as str_skips %}
+const CSRF = "{{ csrf_token }}";
+const LIST_URL = "{% url 'participant_list' route.pk %}";
+const POLL_MS = 10000;
+const STR = {
+  finished: "{{ str_finished|escapejs }}",
+  progress: "{{ str_progress|escapejs }}",
+  skips:    "{{ str_skips|escapejs }}",
+};
+
+function renderProgress(p) {
+  const label = p.finished
+    ? `<span class="badge bg-success">${STR.finished}</span>`
+    : STR.progress.replace("{num}", p.number).replace("{total}", p.total);
+  const skips = p.skips
+    ? ` <span class="badge bg-secondary ms-1" title="${STR.skips}">↷${p.skips}</span>`
+    : "";
+  return label + skips;
+}
+
+function applyParticipant(p) {
+  const row = document.querySelector(`#participant-rows tr[data-id="${p.id}"]`);
+  if (!row) return false;
+  row.querySelector(".progress-cell").innerHTML = renderProgress(p);
+  row.querySelector(".name").textContent = p.name;
+  row.querySelector(".btn-skip").disabled = p.finished;
+  return true;
+}
+
+document.getElementById("participant-rows").addEventListener("click", async (e) => {
+  const btn = e.target.closest(".btn-skip");
+  if (!btn) return;
+  btn.disabled = true;
+  try {
+    const res = await fetch(`/participants/${btn.dataset.id}/skip/`, {
+      method: "POST",
+      headers: {"X-Requested-With": "XMLHttpRequest", "X-CSRFToken": CSRF},
+    });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    applyParticipant(await res.json());
+  } catch (err) {
+    window.location.reload();  // fall back rather than show a stale row
+  }
+});
+
+// Teams appear and progress while this page is open, so keep it current.
+setInterval(async () => {
+  try {
+    const res = await fetch(LIST_URL, {headers: {"X-Requested-With": "XMLHttpRequest"}});
+    if (!res.ok) return;
+    const data = await res.json();
+    // A team that was not on the page when it loaded needs a full render.
+    const unknown = data.participants.some(p => !applyParticipant(p));
+    if (unknown) window.location.reload();
+  } catch (err) {
+    // Try again on the next tick.
+  }
+}, POLL_MS);
+</script>
+{% endblock %}
