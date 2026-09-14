@@ -1,3 +1,11 @@
+## v0.2.0 (2026-09-14)
+
+### Feat
+
+- support multiple map providers
+- track participant teams as a game master
+- show app's version in footer
+
 ## v0.1.0 (2026-09-10)
 
 ### Feat
