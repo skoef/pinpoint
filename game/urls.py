@@ -13,6 +13,7 @@ urlpatterns = [
     path("routes/<int:pk>/qr.png", views.route_qr, name="route_qr"),
     path("routes/<int:pk>/participants/", views.participant_list, name="participant_list"),
     path("participants/<int:pk>/skip/", views.participant_skip, name="participant_skip"),
+    path("participants/<int:pk>/answers/", views.participant_answers, name="participant_answers"),
     path("waypoints/<int:pk>/delete/", views.waypoint_delete, name="waypoint_delete"),
     path("waypoints/<int:pk>/update/", views.waypoint_update, name="waypoint_update"),
     # Health checks

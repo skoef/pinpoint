@@ -1,0 +1,67 @@
+{% extends "game/base.html" %}
+{% load i18n %}
+{% block title %}{{ participant.name }} — {% trans "Answers" %}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h1 class="h3 mb-0">{{ participant.name|default:_("Unnamed team") }} — {% trans "Answers" %}</h1>
+  <div class="d-flex gap-2">
+    <a href="{% url 'participant_list' route.pk %}" class="btn btn-sm btn-outline-secondary">{% trans "Back to teams" %}</a>
+  </div>
+</div>
+
+<p class="text-muted small">
+  {% blocktrans with name=route.name %}Questions on {{ name }}, in route order. Answers on waypoints that do not require a correct answer are collected as given — judge them yourself.{% endblocktrans %}
+</p>
+
+{% if rows %}
+<table class="table align-middle">
+  <thead>
+    <tr>
+      <th>#</th>
+      <th>{% trans "Question" %}</th>
+      <th>{% trans "Their answer" %}</th>
+      <th>{% trans "Expected" %}</th>
+      <th class="text-end">{% trans "Match" %}</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in rows %}
+    <tr>
+      <td class="text-muted">{{ row.number }}</td>
+      <td>
+        <div style="white-space:pre-wrap">{{ row.waypoint.question }}</div>
+        {% if row.waypoint.label %}<div class="text-muted small">{{ row.waypoint.label }}</div>{% endif %}
+        {% if not row.waypoint.require_correct_answer %}
+        <span class="badge bg-secondary" title="{% trans 'The team moved on whatever they answered' %}">{% trans "not checked" %}</span>
+        {% endif %}
+      </td>
+      <td>
+        {% if row.answer %}
+          {% if row.answer.text %}{{ row.answer.text }}{% else %}<span class="text-muted">{% trans "(left blank)" %}</span>{% endif %}
+        {% else %}
+          <span class="text-muted">{% trans "not answered yet" %}</span>
+        {% endif %}
+      </td>
+      <td class="text-muted">{{ row.waypoint.answer|default:"—" }}</td>
+      <td class="text-end">
+        {% if row.answer %}
+          {% if row.answer.is_correct %}
+            <span class="text-success">✓</span>
+          {% elif row.answer.is_correct is False %}
+            <span class="text-danger">✗</span>
+          {% else %}
+            <span class="text-muted">—</span>
+          {% endif %}
+        {% else %}
+          <span class="text-muted">—</span>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="text-muted">{% trans "This route has no questions." %}</p>
+{% endif %}
+{% endblock %}

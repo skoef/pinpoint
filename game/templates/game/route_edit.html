@@ -80,6 +80,7 @@
           data-button-caption="{{ wp.button_caption }}"
           data-question="{{ wp.question }}"
           data-answer="{{ wp.answer }}"
+          data-require-correct="{{ wp.require_correct_answer|yesno:"1,0" }}"
           data-proximity="{{ wp.proximity_meters }}"
           {# Never prepend scheme/host: S3 already returns an absolute URL. #}
           data-image-url="{% if wp.image %}{{ wp.image.url }}{% endif %}">
@@ -129,7 +130,7 @@
           <label class="form-label">{% trans "Advance type" %}</label>
           <select class="form-select" id="modal-advance-type">
             <option value="button">{% trans "Button — player taps to continue" %}</option>
-            <option value="question">{% trans "Question / Riddle — player must answer correctly" %}</option>
+            <option value="question">{% trans "Question / Riddle — player types an answer" %}</option>
             <option value="proximity">{% trans "Auto-proximity — advances when close enough" %}</option>
           </select>
         </div>
@@ -153,6 +154,15 @@
           <div class="mb-3">
             <label class="form-label">{% trans "Correct answer" %} <span class="text-muted">({% trans "case-insensitive" %})</span></label>
             <input type="text" class="form-control" id="modal-answer">
+          </div>
+          <div class="mb-3 form-check">
+            <input class="form-check-input" type="checkbox" id="modal-require-correct" checked>
+            <label class="form-check-label" for="modal-require-correct">
+              {% trans "Answer must be correct to continue" %}
+            </label>
+            <div class="form-text">
+              {% trans "Off: the team moves on whatever they answer, and you judge their answers afterwards in the teams list." %}
+            </div>
           </div>
         </div>
 
@@ -241,11 +251,11 @@ map.fitBounds([[Math.min(...lats), Math.min(...lngs)], [Math.max(...lats), Math.
 
 map.on("click", (e) => {
   pendingLatLng = e.latlng;
-  openModal(null, e.latlng.lat, e.latlng.lng, "", "button", "", "", "", "", DEFAULT_PROXIMITY, "");
+  openModal(null, e.latlng.lat, e.latlng.lng, "", "button", "", "", "", "", true, DEFAULT_PROXIMITY, "");
 });
 
 // --- Modal helpers ---
-function openModal(wpId, lat, lng, label, advanceType, buttonText, buttonCaption, question, answer, proximity, imageUrl) {
+function openModal(wpId, lat, lng, label, advanceType, buttonText, buttonCaption, question, answer, requireCorrect, proximity, imageUrl) {
   document.getElementById("modal-wp-id").value = wpId || "";
   document.getElementById("modal-lat").value = lat;
   document.getElementById("modal-lng").value = lng;
@@ -255,6 +265,7 @@ function openModal(wpId, lat, lng, label, advanceType, buttonText, buttonCaption
   document.getElementById("modal-button-caption").value = buttonCaption;
   document.getElementById("modal-question").value = question;
   document.getElementById("modal-answer").value = answer;
+  document.getElementById("modal-require-correct").checked = requireCorrect;
   document.getElementById("modal-proximity").value = proximity;
   document.getElementById("modal-image").value = "";
   document.getElementById("modal-clear-image").checked = false;
@@ -293,6 +304,8 @@ document.getElementById("modal-save").addEventListener("click", async () => {
   fd.append("button_caption",   document.getElementById("modal-button-caption").value);
   fd.append("question",         document.getElementById("modal-question").value);
   fd.append("answer",           document.getElementById("modal-answer").value);
+  fd.append("require_correct_answer",
+            document.getElementById("modal-require-correct").checked ? "1" : "0");
   fd.append("proximity_meters", parseInt(document.getElementById("modal-proximity").value) || DEFAULT_PROXIMITY);
   const imageFile = document.getElementById("modal-image").files[0];
   if (imageFile) fd.append("image", imageFile);
@@ -332,6 +345,7 @@ function makeLi(wp, order) {
   li.dataset.buttonCaption = wp.button_caption;
   li.dataset.question = wp.question;
   li.dataset.answer = wp.answer;
+  li.dataset.requireCorrect = wp.require_correct_answer ? "1" : "0";
   li.dataset.proximity = wp.proximity_meters;
   li.dataset.imageUrl = wp.image_url || "";
   li.innerHTML = `
@@ -390,6 +404,7 @@ document.getElementById("waypoint-list").addEventListener("click", async (e) => 
       li.dataset.buttonCaption,
       li.dataset.question,
       li.dataset.answer,
+      li.dataset.requireCorrect !== "0",
       parseInt(li.dataset.proximity),
       li.dataset.imageUrl || "",
     );

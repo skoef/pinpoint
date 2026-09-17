@@ -7,12 +7,21 @@ A browser-based GPS scavenger hunt app. Game masters create routes with hidden w
 **Game masters** log in and create routes — ordered sequences of GPS waypoints. Each waypoint can advance the player in one of three ways:
 
 - **Button** — player taps a button (with optional descriptive text and custom label)
-- **Question / Riddle** — player must answer correctly to proceed
+- **Question / Riddle** — player types an answer
 - **Auto-proximity** — player is automatically advanced once they walk within a configured radius
+
+Question waypoints come in two flavours, set per waypoint with **Answer must be correct to continue**:
+
+- **On** (the default) — a wrong answer keeps the team where they are until they get it right.
+- **Off** — the answer is stored and the team moves on regardless. Nobody gets stuck, and the game master judges the answers afterwards, so a route can be scored at the finish rather than gated along the way.
+
+Answers are kept either way, one per team per waypoint (a retry overwrites), so the sheet always shows what the team went on with.
 
 The button or question is only revealed once the player physically arrives at the waypoint. Routes are shared via a URL or QR code. No app install required — it runs entirely in the browser.
 
 **Game masters** can also watch progress and help out: the **Teams** page for a route lists every team that has started, which waypoint they are on, and a **Skip waypoint** button that moves a stuck team on without them solving the current one. The team's screen picks that up within about 15 seconds and tells them what happened. Skips are counted per team, so it is visible afterwards who needed a hand.
+
+**Answers** next to each team opens that team's answer sheet: every question on the route in order, what they typed, the expected answer, and a ✓/✗ against it. Waypoints they have not reached yet are listed blank, and a waypoint with no expected answer filled in shows no verdict — that is the game master's call.
 
 **Players** open the link on their phone. They enter a team name to start, which is the name the game master sees. The browser asks for location access, then shows the distance in metres to the next hidden waypoint. Once close enough, the advance UI appears. Progress is recorded against the team on the server, with the browser session remembering which team it is, so players can close and reopen the browser without losing their place.
 

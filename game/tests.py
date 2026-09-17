@@ -27,7 +27,7 @@ from pinpoint.dbconfig import POSTGRES_ENGINE, SQLITE_ENGINE, database_config
 import game
 from . import dbsync
 from .apps import GameConfig
-from .models import Participant, Route, Waypoint
+from .models import Answer, Participant, Route, Waypoint
 
 IN_MEMORY_STORAGE = override_settings(DEFAULT_FILE_STORAGE="django.core.files.storage.InMemoryStorage")
 
@@ -2328,3 +2328,284 @@ class PlaySessionIsolationTest(TestCase):
         session = self.client.session
         self.assertEqual(progress(self.client, route_a), 1)
         self.assertEqual(progress(self.client, route_b) or 0, 0)
+
+
+# ---------------------------------------------------------------------------
+# Collected answers
+# ---------------------------------------------------------------------------
+
+class AnswerModelTest(TestCase):
+    def setUp(self):
+        self.route = make_route()
+        self.wp = make_waypoint(self.route, order=0, advance_type=Waypoint.QUESTION,
+                                question="Colour of the sky?", answer=" Blue ")
+        self.participant = Participant.objects.create(route=self.route, name="Red")
+
+    def _answer(self, text):
+        return Answer.objects.create(participant=self.participant, waypoint=self.wp,
+                                     text=text)
+
+    def test_matching_ignores_case_and_padding(self):
+        self.assertTrue(self.wp.answer_matches("  blue "))
+        self.assertFalse(self.wp.answer_matches("red"))
+
+    def test_is_correct(self):
+        self.assertTrue(self._answer("BLUE").is_correct)
+
+    def test_is_incorrect(self):
+        self.assertFalse(self._answer("red").is_correct)
+
+    def test_is_correct_is_undefined_without_a_reference_answer(self):
+        # Nothing to compare against, so the game master judges it unaided --
+        # "" == "" must not read as a correct answer.
+        self.wp.answer = ""
+        self.wp.save(update_fields=["answer"])
+        self.assertIsNone(self._answer("").is_correct)
+        self.assertIsNone(Answer.objects.get().is_correct)
+
+    def test_waypoints_gate_by_default(self):
+        self.assertTrue(Waypoint.objects.get(pk=self.wp.pk).require_correct_answer)
+
+
+class CollectedAnswerTest(TestCase):
+    """An ungated question waypoint stores the answer and lets the team past."""
+
+    def setUp(self):
+        self.route = make_route()
+        self.wp = make_waypoint(self.route, order=0, advance_type=Waypoint.QUESTION,
+                                question="Colour of the sky?", answer="Blue",
+                                require_correct_answer=False)
+        make_waypoint(self.route, order=1, advance_type=Waypoint.BUTTON)
+
+    def _submit(self, value, **extra):
+        return self.client.post(reverse("play_advance", args=[self.route.token]),
+                                {"answer": value}, **extra)
+
+    def test_wrong_answer_advances(self):
+        self._submit("red")
+        self.assertEqual(progress(self.client, self.route), 1)
+
+    def test_wrong_answer_is_stored(self):
+        self._submit("red")
+        answer = Answer.objects.get()
+        self.assertEqual(answer.text, "red")
+        self.assertFalse(answer.is_correct)
+        self.assertEqual(answer.waypoint, self.wp)
+        self.assertEqual(answer.participant, self.route.participants.get())
+
+    def test_correct_answer_is_stored_too(self):
+        self._submit("blue")
+        self.assertTrue(Answer.objects.get().is_correct)
+
+    def test_blank_answer_advances_and_is_stored_blank(self):
+        self._submit("")
+        self.assertEqual(progress(self.client, self.route), 1)
+        self.assertEqual(Answer.objects.get().text, "")
+
+    def test_no_error_is_shown(self):
+        response = self._submit("red")
+        self.assertRedirects(response, reverse("play_game", args=[self.route.token]))
+
+    def test_fragment_reports_advanced(self):
+        data = self._submit("red", **AJAX).json()
+        self.assertEqual(data["status"], "advanced")
+        self.assertEqual(data["number"], 2)
+
+    def test_answers_are_kept_per_team(self):
+        other = self.client_class()
+        self._submit("red")
+        other.post(reverse("play_advance", args=[self.route.token]), {"answer": "green"})
+        self.assertEqual(
+            sorted(Answer.objects.values_list("text", flat=True)), ["green", "red"])
+
+    def test_deleting_a_team_removes_its_answers(self):
+        self._submit("red")
+        self.route.participants.get().delete()
+        self.assertEqual(Answer.objects.count(), 0)
+
+
+class GatedAnswerRecordingTest(TestCase):
+    """A gated waypoint still blocks, but what the team typed is kept."""
+
+    def setUp(self):
+        self.route = make_route()
+        self.wp = make_waypoint(self.route, order=0, advance_type=Waypoint.QUESTION,
+                                question="Colour of the sky?", answer="Blue")
+        make_waypoint(self.route, order=1, advance_type=Waypoint.BUTTON)
+
+    def _submit(self, value):
+        return self.client.post(reverse("play_advance", args=[self.route.token]),
+                                {"answer": value})
+
+    def test_wrong_answer_still_blocks(self):
+        self._submit("red")
+        self.assertEqual(progress(self.client, self.route) or 0, 0)
+
+    def test_wrong_answer_is_recorded(self):
+        self._submit("red")
+        self.assertEqual(Answer.objects.get().text, "red")
+
+    def test_a_retry_overwrites_rather_than_piling_up(self):
+        self._submit("red")
+        self._submit("blue")
+        answer = Answer.objects.get()  # one row per team per waypoint
+        self.assertEqual(answer.text, "blue")
+
+    def test_nothing_is_recorded_without_a_question(self):
+        # A question waypoint with no question renders a plain button, so there
+        # is no answer to keep.
+        route = make_route(name="Blank")
+        make_waypoint(route, order=0, advance_type=Waypoint.QUESTION)
+        self.client.post(reverse("play_advance", args=[route.token]))
+        self.assertEqual(Answer.objects.count(), 0)
+        self.assertEqual(progress(self.client, route), 1)
+
+
+class RequireCorrectAnswerEditingTest(GMTestCase):
+    def setUp(self):
+        super().setUp()
+        self.route = make_route(owner=self.user)
+
+    def _add(self, data):
+        payload = {"lat": "52.1", "lng": "4.1", "advance_type": Waypoint.QUESTION,
+                   "question": "Q?", "answer": "a"}
+        payload.update(data)
+        return post_form(self.client, reverse("waypoint_add", args=[self.route.pk]),
+                         payload)
+
+    def test_added_waypoints_gate_unless_told_otherwise(self):
+        data = self._add({}).json()
+        self.assertTrue(data["require_correct_answer"])
+        self.assertTrue(Waypoint.objects.get().require_correct_answer)
+
+    def test_can_be_switched_off_on_add(self):
+        data = self._add({"require_correct_answer": "0"}).json()
+        self.assertFalse(data["require_correct_answer"])
+        self.assertFalse(Waypoint.objects.get().require_correct_answer)
+
+    def test_can_be_switched_off_on_update(self):
+        wp = make_waypoint(self.route, order=0, advance_type=Waypoint.QUESTION,
+                           question="Q?", answer="a")
+        data = post_form(self.client, reverse("waypoint_update", args=[wp.pk]),
+                         {"require_correct_answer": "0"}).json()
+        self.assertFalse(data["require_correct_answer"])
+        wp.refresh_from_db()
+        self.assertFalse(wp.require_correct_answer)
+
+    def test_update_leaves_it_alone_when_not_posted(self):
+        wp = make_waypoint(self.route, order=0, advance_type=Waypoint.QUESTION,
+                           question="Q?", answer="a", require_correct_answer=False)
+        post_form(self.client, reverse("waypoint_update", args=[wp.pk]),
+                  {"label": "Renamed"})
+        wp.refresh_from_db()
+        self.assertFalse(wp.require_correct_answer)
+
+    def test_editor_offers_the_toggle(self):
+        make_waypoint(self.route, order=0, advance_type=Waypoint.QUESTION,
+                      question="Q?", answer="a", require_correct_answer=False)
+        html = self.client.get(reverse("route_edit", args=[self.route.pk])).content.decode()
+        self.assertIn('id="modal-require-correct"', html)
+        self.assertIn('data-require-correct="0"', html)
+
+
+class ParticipantAnswersTest(GMTestCase):
+    def setUp(self):
+        super().setUp()
+        self.route = make_route(owner=self.user)
+        self.q1 = make_waypoint(self.route, order=0, advance_type=Waypoint.QUESTION,
+                                question="Colour of the sky?", answer="Blue",
+                                require_correct_answer=False)
+        make_waypoint(self.route, order=1, advance_type=Waypoint.BUTTON,
+                      label="Just a button")
+        self.q2 = make_waypoint(self.route, order=2, advance_type=Waypoint.QUESTION,
+                                question="How many bridges?", answer="Seven",
+                                require_correct_answer=False)
+        self.participant = Participant.objects.create(route=self.route, name="Red")
+
+    def _get(self, participant=None):
+        target = participant or self.participant
+        return self.client.get(reverse("participant_answers", args=[target.pk]))
+
+    def _answer(self, waypoint, text):
+        return Answer.objects.create(participant=self.participant, waypoint=waypoint,
+                                     text=text)
+
+    def test_lists_the_questions_in_route_order(self):
+        html = self._get().content.decode()
+        self.assertLess(html.index("Colour of the sky?"), html.index("How many bridges?"))
+
+    def test_skips_non_question_waypoints(self):
+        self.assertNotIn("Just a button", self._get().content.decode())
+
+    def test_shows_the_answer_and_the_expected_one(self):
+        self._answer(self.q1, "green")
+        html = self._get().content.decode()
+        self.assertIn("green", html)
+        self.assertIn("Blue", html)
+        self.assertIn("✗", html)
+
+    def test_marks_a_correct_answer(self):
+        self._answer(self.q1, "blue")
+        self.assertIn("✓", self._get().content.decode())
+
+    def test_unanswered_questions_are_listed_blank(self):
+        html = self._get().content.decode()
+        self.assertIn("not answered yet", html)
+
+    def test_flags_ungated_questions(self):
+        self.assertIn("not checked", self._get().content.decode())
+
+    def test_route_without_questions(self):
+        route = make_route(name="Buttons only", owner=self.user)
+        make_waypoint(route, order=0, advance_type=Waypoint.BUTTON)
+        participant = Participant.objects.create(route=route, name="Blue")
+        self.assertIn("This route has no questions.",
+                      self._get(participant).content.decode())
+
+    def test_requires_login(self):
+        self.client.logout()
+        self.assertEqual(self._get().status_code, 302)
+
+    def test_cannot_see_another_users_team(self):
+        other = make_route(name="Theirs", owner=make_user("mallory"))
+        theirs = Participant.objects.create(route=other, name="Theirs")
+        self.assertEqual(self._get(theirs).status_code, 404)
+
+    def test_teams_list_links_here(self):
+        html = self.client.get(
+            reverse("participant_list", args=[self.route.pk])).content.decode()
+        self.assertIn(reverse("participant_answers", args=[self.participant.pk]), html)
+
+
+class CollectedAnswerWalkthroughTest(TestCase):
+    """A team walks an ungated route wrong end to end; the game master reads it back."""
+
+    def test_walkthrough(self):
+        gm = make_user("gm3")
+        route = make_route(name="Survey", owner=gm)
+        for order, (question, answer) in enumerate([("Q1?", "one"), ("Q2?", "two")]):
+            make_waypoint(route, order=order, advance_type=Waypoint.QUESTION,
+                          question=question, answer=answer,
+                          require_correct_answer=False)
+
+        team = self.client_class()
+        team.post(reverse("play_start", args=[route.token]), {"name": "Red"}, **AJAX)
+        first = team.post(reverse("play_advance", args=[route.token]),
+                          {"answer": "wrong"}, **AJAX).json()
+        self.assertEqual(first["status"], "advanced")
+        second = team.post(reverse("play_advance", args=[route.token]),
+                           {"answer": "two"}, **AJAX).json()
+        self.assertEqual(second["status"], "finished")
+
+        participant = route.participants.get()
+        self.assertTrue(participant.is_finished)
+        self.assertEqual(participant.skips, 0)  # nobody had to be rescued
+
+        master = self.client_class()
+        master.login(username="gm3", password="testpass")
+        html = master.get(
+            reverse("participant_answers", args=[participant.pk])).content.decode()
+        self.assertIn("wrong", html)
+        self.assertIn("two", html)
+        self.assertIn("✗", html)
+        self.assertIn("✓", html)

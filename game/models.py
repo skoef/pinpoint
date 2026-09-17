@@ -98,6 +98,10 @@ class Waypoint(models.Model):
     button_caption = models.CharField(max_length=200, blank=True)
     question = models.TextField(blank=True)
     answer = models.CharField(max_length=500, blank=True)
+    # Off turns the question into a survey: whatever the team types is stored on
+    # an Answer and they move on, leaving the game master to judge it afterwards.
+    # Defaults to on so existing riddles keep gating.
+    require_correct_answer = models.BooleanField(default=True)
     proximity_meters = models.PositiveIntegerField(default=DEFAULT_PROXIMITY_METERS)
     image = models.ImageField(upload_to=waypoint_image_path, blank=True)
 
@@ -107,6 +111,43 @@ class Waypoint(models.Model):
     def __str__(self):
         label = self.label or f"Waypoint {self.order + 1}"
         return f"{self.route.name} — {label}"
+
+    def answer_matches(self, text):
+        """Whether ``text`` is the expected answer, ignoring case and padding."""
+        return text.strip().lower() == self.answer.strip().lower()
+
+
+class Answer(models.Model):
+    """What a team typed at a question waypoint.
+
+    Stored whether or not it was right: a waypoint with
+    ``require_correct_answer`` off lets the team past regardless, so the game
+    master needs the submissions to look at once the route is walked. One row per
+    team per waypoint -- a retry overwrites, so what is kept is the answer the
+    team went on with.
+    """
+
+    participant = models.ForeignKey(Participant, on_delete=models.CASCADE, related_name="answers")
+    waypoint = models.ForeignKey(Waypoint, on_delete=models.CASCADE, related_name="answers")
+    text = models.CharField(max_length=500, blank=True)
+    submitted_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["waypoint__order"]
+        constraints = [
+            models.UniqueConstraint(fields=["participant", "waypoint"],
+                                    name="unique_answer_per_participant_waypoint"),
+        ]
+
+    def __str__(self):
+        return f"{self.participant.name or 'unnamed'}: {self.text or '—'}"
+
+    @property
+    def is_correct(self):
+        """True/False against the waypoint's answer, or None if it has none."""
+        if not self.waypoint.answer.strip():
+            return None
+        return self.waypoint.answer_matches(self.text)
 
 
 @receiver(post_delete, sender=Waypoint)

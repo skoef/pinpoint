@@ -11,7 +11,7 @@ from django.template.loader import render_to_string
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
-from .models import Participant, Route, Waypoint
+from .models import Answer, Participant, Route, Waypoint
 
 
 # ---------------------------------------------------------------------------
@@ -155,6 +155,28 @@ def participant_skip(request, pk):
 
 
 @login_required
+def participant_answers(request, pk):
+    """Every question on the route with what this team answered.
+
+    Waypoints they have not reached are listed too, blank, so the sheet reads in
+    route order rather than jumping over gaps. Ungated waypoints are what this is
+    for -- the team walked past a wrong answer and the game master decides here.
+    """
+    participant = get_object_or_404(Participant, pk=pk, route__owner=request.user)
+    submitted = {a.waypoint_id: a for a in participant.answers.all()}
+    rows = [
+        {"number": i + 1, "waypoint": wp, "answer": submitted.get(wp.pk)}
+        for i, wp in enumerate(participant.route.get_ordered_waypoints())
+        if wp.advance_type == Waypoint.QUESTION and wp.question
+    ]
+    return render(request, "game/participant_answers.html", {
+        "route": participant.route,
+        "participant": participant,
+        "rows": rows,
+    })
+
+
+@login_required
 def route_qr(request, pk):
     route = get_object_or_404(Route, pk=pk, owner=request.user)
     play_url = request.build_absolute_uri(f"/play/{route.token}/")
@@ -180,6 +202,7 @@ def waypoint_add(request, pk):
         button_caption=request.POST.get("button_caption", ""),
         question=request.POST.get("question", ""),
         answer=request.POST.get("answer", ""),
+        require_correct_answer=request.POST.get("require_correct_answer", "1") == "1",
         proximity_meters=int(request.POST.get(
             "proximity_meters", Waypoint.DEFAULT_PROXIMITY_METERS)),
         # Attachable straight away: the upload path only needs route_id, which is
@@ -200,6 +223,8 @@ def waypoint_update(request, pk):
     wp.button_caption = request.POST.get("button_caption", wp.button_caption)
     wp.question = request.POST.get("question", wp.question)
     wp.answer = request.POST.get("answer", wp.answer)
+    if "require_correct_answer" in request.POST:
+        wp.require_correct_answer = request.POST["require_correct_answer"] == "1"
     wp.proximity_meters = int(request.POST.get("proximity_meters", wp.proximity_meters))
     if request.FILES.get("image"):
         wp.image = request.FILES["image"]
@@ -246,6 +271,7 @@ def _wp_json(wp, request=None):
         "button_caption": wp.button_caption,
         "question": wp.question,
         "answer": wp.answer,
+        "require_correct_answer": wp.require_correct_answer,
         "proximity_meters": wp.proximity_meters,
         "image_url": image_url,
     }
@@ -435,9 +461,15 @@ def play_advance(request, token):
     current = waypoints[current_index]
 
     if current.advance_type == Waypoint.QUESTION:
-        user_answer = request.POST.get("answer", "").strip().lower()
-        correct = current.answer.strip().lower()
-        if user_answer != correct:
+        user_answer = request.POST.get("answer", "")
+        if current.question:
+            # Keep it even when it is wrong -- an ungated waypoint lets the team
+            # past either way and the game master judges it later.
+            Answer.objects.update_or_create(
+                participant=participant, waypoint=current,
+                defaults={"text": user_answer.strip()[:500]},
+            )
+        if current.require_correct_answer and not current.answer_matches(user_answer):
             context = _play_context(route, waypoints, current_index, token,
                                     answer_error=True)
             if _wants_fragment(request):

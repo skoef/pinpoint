@@ -13,6 +13,7 @@
 
 <p class="text-muted small">
   {% trans "Use “Skip waypoint” when a team is stuck. They move on to the next waypoint without having to solve the current one." %}
+  {% trans "“Answers” shows what a team typed at each question waypoint." %}
 </p>
 
 <table class="table align-middle">
@@ -21,7 +22,7 @@
       <th>{% trans "Team" %}</th>
       <th>{% trans "Progress" %}</th>
       <th>{% trans "Started" %}</th>
-      <th class="text-end">{% trans "Action" %}</th>
+      <th class="text-end">{% trans "Actions" %}</th>
     </tr>
   </thead>
   <tbody id="participant-rows">
@@ -41,6 +42,9 @@
       </td>
       <td class="text-muted small">{{ participant.started_at|time:"H:i" }}</td>
       <td class="text-end">
+        <a class="btn btn-sm btn-outline-secondary" href="{% url 'participant_answers' participant.pk %}">
+          {% trans "Answers" %}
+        </a>
         <button class="btn btn-sm btn-outline-primary btn-skip" data-id="{{ participant.pk }}"
                 {% if participant.finished_at %}disabled{% endif %}>
           {% trans "Skip waypoint" %}
